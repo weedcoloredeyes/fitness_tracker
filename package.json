@@ -8,7 +8,7 @@
   },
   "scripts": {
     "server": "node --env-file=.env --import tsx server/index.ts",
-    "test": "node --import tsx --test server/*.test.ts",
+    "test": "node --import tsx --test server/*.test.ts bot/*.test.ts",
     "dev": "vite --host 127.0.0.1",
     "bot": "node --env-file=.env --import tsx bot/index.ts",
     "typecheck": "tsc --noEmit",

@@ -1,0 +1,108 @@
+/* Keep the display type; soften the reading and interface text. */
+:root {
+  --font-heading: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  --sans: var(--font-body);
+  --mono: var(--font-body);
+  font-family: var(--font-body);
+}
+
+/* Family only: retain every heading's existing size, weight and spacing. */
+.app :is(h1, h2, h3),
+.app :is(h1, h2, h3) .card-index,
+.app .edit-profile {
+  font-family: var(--font-heading);
+}
+
+.fat-value,
+.fat-target,
+.weight-values strong,
+.workouts-total,
+.index-score,
+.day-measurement-values strong,
+.legacy-measurement-values strong,
+.monthly-category-total strong,
+.workout-records dd {
+  font-family: var(--font-heading);
+}
+
+/* Supporting copy stays quiet, with enough size to read on a phone. */
+.eyebrow,
+.edition-line,
+.label-heading,
+.composition-values > div > span,
+.section-heading > span,
+.weight-values div > span,
+.fat-goal,
+.daily-measurement-reminder,
+.progress-caption,
+.progress-baseline,
+.workout-count-note,
+.workouts-breakdown,
+.form-hint,
+.calendar-period,
+.calendar-legend,
+.index-formula,
+.measurement-history-heading p,
+.day-measurement-values > div > span,
+.measurement-reminder,
+.measurement-chart-caption,
+.legacy-measurement p,
+.legacy-measurement-values span,
+.monthly-plan-heading > span,
+.monthly-category-total > span,
+.monthly-category-unit,
+.monthly-rule,
+.tracking-day-heading > span,
+.tracking-group-heading > span,
+.tracking-mark-share,
+.definition-row small,
+.workout-hint,
+.workout-record-name > span,
+.workout-records dt,
+.workout-row-heading > span {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: normal;
+}
+
+.label-heading h2 { font-family: var(--font-heading); }
+.monthly-category-heading > span,
+.calendar-grid thead th,
+.calendar-grid .week-number,
+.bottom-nav .nav-number {
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+.day-month { font-size: 8.5px; }
+.calendar-navigation button,
+.bottom-nav button,
+.tracking-text-button,
+.tracking-row-actions button,
+.workout-copy,
+.workout-add,
+.workout-remove {
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+.profile-fields label,
+.workout-goal-form > label,
+.measurement-fields label,
+.monthly-goal-fields label,
+.definition-create label,
+.workout-editor label {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+.workout-quantities label { padding-top: 17px; font-size: 11.5px; }
+.workout-optional { font-size: 10.5px; }
+.measurement-table { font-size: 11.5px; }
+.measurement-table th { font-size: 10.5px; }
+.measurement-chart-axis text,
+text.measurement-chart-axis { font-size: 10.5px; }
+.preview-notice strong { font-size: 11px; font-weight: 400; }

@@ -1,0 +1,27 @@
+.tracking-day-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-top:26px; border-top:1px solid var(--line); }
+.tracking-day-heading .day-activity-heading { margin:16px 0; }
+.tracking-day-heading > span, .tracking-group-heading > span { font:10px/1.5 var(--mono); color:var(--muted); }
+.tracking-group { min-width:0; margin-bottom:20px; }
+.tracking-group-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:8px 0 10px; }
+.tracking-group-heading h3 { font:11px/1.5 var(--mono); margin:0; }
+.tracking-group .activity-option { min-width:0; }
+.tracking-group .activity-option > span:last-child { overflow-wrap:anywhere; }
+.tracking-mark-share { display:block; color:var(--muted); font:9px/1.5 var(--mono); margin-top:3px; }
+.tracking-hint { margin:10px 0 18px; color:var(--muted); font-size:11px; line-height:1.6; }
+.tracking-text-button { background:none; border:0; border-bottom:1px solid currentColor; padding:5px 0; color:var(--muted); font:10px/1.7 var(--mono); }
+.definitions-manager { margin:18px 0 28px; }
+.definitions-content { margin-top:16px; border:1px solid var(--line); padding:16px; }
+.definition-row { display:flex; min-width:0; justify-content:space-between; gap:12px; align-items:center; padding:13px 0; border-top:1px solid var(--line); }
+.definition-row > div:first-child { min-width:0; }
+.definition-name { display:block; overflow-wrap:anywhere; font-size:13px; }
+.definition-row small { display:block; margin-top:4px; color:var(--muted); font:9px/1.5 var(--mono); }
+.tracking-row-actions { display:flex; flex-wrap:wrap; gap:6px 10px; flex-shrink:0; }
+.tracking-row-actions button { background:none; border:0; padding:5px 0; border-bottom:1px solid var(--line); font:9px/1.5 var(--mono); }
+.definition-row form { width:100%; }
+.definition-row input,.definition-create input,.definition-create select { width:100%; min-width:0; min-height:42px; border:1px solid var(--line); border-radius:0; background:var(--label); padding:8px; }
+.definition-row form .tracking-row-actions { margin-top:8px; }
+.definition-create { margin-top:24px; border-top:1px solid var(--line); padding-top:16px; }
+.definition-create h3 { margin:0 0 14px; font:12px/1.5 var(--mono); }
+.definition-create label { display:grid; gap:5px; margin-bottom:12px; color:var(--muted); font:10px/1.5 var(--mono); }
+.definition-create .save-profile { width:100%; margin-top:8px; }
+@media(max-width:360px) { .definitions-content { padding:12px; } .definition-row { gap:8px; } .tracking-row-actions { gap:6px; } }

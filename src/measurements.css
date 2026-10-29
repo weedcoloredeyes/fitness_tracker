@@ -1,0 +1,184 @@
+/* Dated measurements share the paper / ink archive language. */
+.day-measurement,
+.measurement-history {
+  min-width: 0;
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.day-measurement-heading,
+.measurement-history-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-bottom: 22px;
+}
+
+.day-measurement-heading h2,
+.measurement-history-heading h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.35;
+  letter-spacing: -.025em;
+}
+
+.day-measurement-heading .edit-profile { min-height: 44px; }
+.measurement-history-heading p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--muted);
+  font: 10px/1.7 var(--mono);
+}
+
+.day-measurement-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  padding-bottom: 6px;
+}
+
+.day-measurement-values > div { min-width: 0; }
+.day-measurement-values > div + div {
+  padding-left: 20px;
+  border-left: 1px solid var(--line);
+}
+.day-measurement-values > div > span {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font: 10px/1.5 var(--mono);
+}
+.day-measurement-values strong {
+  display: block;
+  min-height: 46px;
+  font-size: clamp(34px, 10.5vw, 46px);
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -.06em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.day-measurement-values .unit {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.measurement-reminder {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font: 10px/1.7 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.measurement-form { min-width: 0; margin: 24px 0 0; }
+.measurement-form fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.measurement-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 14px;
+}
+.measurement-fields label { display: grid; min-width: 0; gap: 8px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.measurement-fields input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 11px 10px;
+  border: 1px solid var(--control);
+  border-radius: 0;
+  color: var(--ink);
+  background: var(--label);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.25;
+  text-transform: lowercase;
+}
+.measurement-fields input:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.measurement-fields input:disabled { color: var(--muted); cursor: default; }
+.measurement-actions { display: flex; align-items: stretch; gap: 10px; margin-top: 18px; }
+.measurement-actions button { min-width: 0; min-height: 44px; }
+.measurement-actions .save-profile { flex: 1; width: auto; }
+.measurement-actions .retry-button { flex-shrink: 0; }
+.measurement-status { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.measurement-error {
+  margin: 18px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--ink);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.measurement-error p { margin: 0 0 12px; }
+
+.measurement-chart { min-width: 0; width: 100%; margin: 2px 0 14px; }
+svg.measurement-chart,
+.measurement-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.measurement-chart-line { fill: none; stroke: var(--ink); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.measurement-chart-point { fill: var(--ink); stroke: var(--paper); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.measurement-chart-axis text,
+text.measurement-chart-axis { fill: var(--muted); font: 9px/1.5 var(--mono); }
+.measurement-chart-axis line { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.measurement-chart-caption {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 5px 16px;
+  margin: 8px 0 18px;
+  color: var(--muted);
+  font: 9px/1.7 var(--mono);
+}
+
+.measurement-table {
+  width: 100%;
+  max-width: 100%;
+  margin-top: 18px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font: 11px/1.6 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.measurement-table th,
+.measurement-table td { min-width: 0; padding: 13px 6px; border-bottom: 1px solid var(--line); text-align: right; vertical-align: top; }
+.measurement-table th { color: var(--muted); font-size: 9px; font-weight: 400; overflow-wrap: anywhere; }
+.measurement-table td { white-space: nowrap; }
+.measurement-table th:first-child,
+.measurement-table td:first-child { width: 40%; padding-left: 0; text-align: left; }
+.measurement-table th:last-child,
+.measurement-table td:last-child { padding-right: 0; }
+.measurement-table time { font: inherit; }
+
+.legacy-measurement {
+  min-width: 0;
+  margin-top: 24px;
+  padding: 17px 16px 18px;
+  border: 1px dashed var(--line);
+  color: var(--ink);
+  background: var(--label);
+}
+.legacy-measurement h3 { margin: 0 0 17px; font-size: 12px; font-weight: 400; line-height: 1.6; }
+.legacy-measurement p { margin: 12px 0 0; color: var(--muted); font: 9px/1.7 var(--mono); }
+.legacy-measurement-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.legacy-measurement-values > div { min-width: 0; }
+.legacy-measurement-values span { display: block; margin-bottom: 8px; color: var(--muted); font: 9px/1.5 var(--mono); }
+.legacy-measurement-values strong { font-size: 25px; font-weight: 300; line-height: 1.1; letter-spacing: -.04em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.legacy-measurement-values .unit { margin-left: 4px; font-size: 11px; font-weight: 400; letter-spacing: 0; }
+
+@media (max-width: 360px) {
+  .day-measurement-values { gap: 16px; }
+  .day-measurement-values > div + div { padding-left: 14px; }
+  .day-measurement-values strong { font-size: 34px; }
+  .day-measurement-values .unit { font-size: 10px; }
+  .measurement-fields { gap: 16px 10px; }
+  .measurement-actions { gap: 8px; }
+  .measurement-actions .retry-button { padding-right: 12px; padding-left: 12px; }
+  .measurement-table { font-size: 10px; }
+  .measurement-table th { font-size: 8px; }
+  .measurement-table th,
+  .measurement-table td { padding-right: 4px; padding-left: 4px; }
+  .legacy-measurement { padding-right: 12px; padding-left: 12px; }
+}

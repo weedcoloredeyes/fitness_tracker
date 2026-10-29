@@ -4,6 +4,9 @@ import { DatabaseSync } from 'node:sqlite';
 import type { TelegramUser } from './auth';
 import { calculateFormIndex, formIndexStart } from './form-index';
 import { weightProgress, type Profile, type ProfileInput } from './profile';
+import { validateActivityDate } from './activity';
+import { validateMeasurement, type Measurement, type MeasurementInput } from './measurements';
+import { Tracking } from './tracking';
 
 export type AppUser = TelegramUser & {
   role: 'admin' | 'user';
@@ -34,6 +37,7 @@ function mapUser(row: Record<string, unknown>): AppUser {
 
 export class Users {
   private db: DatabaseSync;
+  readonly tracking: Tracking;
 
   constructor(file: string, legacyFile?: string) {
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
@@ -77,7 +81,8 @@ export class Users {
           target_fat REAL CHECK (target_fat BETWEEN 1 AND 70),
           current_weight REAL CHECK (current_weight BETWEEN 20 AND 400),
           target_weight REAL CHECK (target_weight BETWEEN 20 AND 400),
-          start_weight REAL CHECK (start_weight BETWEEN 20 AND 400)
+          start_weight REAL CHECK (start_weight BETWEEN 20 AND 400),
+          start_weight_date TEXT CHECK (length(start_weight_date) = 10 AND start_weight_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
         ) STRICT;
         CREATE TABLE IF NOT EXISTS monthly_workout_goals (
           user_id INTEGER NOT NULL REFERENCES users(id),
@@ -85,13 +90,28 @@ export class Users {
           goal INTEGER NOT NULL CHECK (goal BETWEEN 1 AND 1000),
           PRIMARY KEY (user_id, month)
         ) STRICT;
-        PRAGMA user_version = 5;
+        CREATE TABLE IF NOT EXISTS daily_measurements (
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          date TEXT NOT NULL CHECK (length(date) = 10 AND date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+          current_weight REAL CHECK (current_weight BETWEEN 20 AND 400),
+          current_fat REAL CHECK (current_fat BETWEEN 1 AND 70),
+          PRIMARY KEY (user_id, date),
+          CHECK (current_weight IS NOT NULL OR current_fat IS NOT NULL)
+        ) STRICT;
       `);
+      const profileColumns = this.db.prepare('PRAGMA table_info(body_profiles)').all();
+      if (!profileColumns.some((column) => column.name === 'start_weight_date')) {
+        // Old starts had no recorded source date; preserve them without guessing one.
+        this.db.exec(`ALTER TABLE body_profiles ADD COLUMN start_weight_date TEXT
+          CHECK (length(start_weight_date) = 10 AND start_weight_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')`);
+      }
       const settings = this.db.prepare('SELECT legacy_imported FROM app_settings WHERE id = 1').get()!;
       if (!settings.legacy_imported) {
         if (legacyFile && existsSync(legacyFile)) this.importLegacy(legacyFile);
         this.db.exec('UPDATE app_settings SET legacy_imported = 1 WHERE id = 1');
       }
+      this.tracking = new Tracking(this.db);
+      this.db.exec('PRAGMA user_version = 8');
       this.db.exec('COMMIT');
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch { /* транзакция могла не начаться */ }
@@ -104,7 +124,7 @@ export class Users {
     const state: LegacyState = JSON.parse(readFileSync(file, 'utf8'));
     if (!state || !Array.isArray(state.users) ||
         (state.adminId !== null && (!Number.isSafeInteger(state.adminId) || state.adminId <= 0))) {
-      throw new Error('Некорректное старое хранилище пользователей; перенос отменён.');
+      throw new Error('Некорректное старое хранилище пользователей; перенос отменен.');
     }
     const insert = this.db.prepare(`
       INSERT INTO users (id, first_name, last_name, username, first_seen, last_seen)
@@ -115,11 +135,11 @@ export class Users {
           (user.last_name !== undefined && typeof user.last_name !== 'string') ||
           (user.username !== undefined && typeof user.username !== 'string') ||
           typeof user.firstSeen !== 'string' || typeof user.lastSeen !== 'string') {
-        throw new Error('Некорректный пользователь в старом хранилище; перенос отменён.');
+        throw new Error('Некорректный пользователь в старом хранилище; перенос отменен.');
       }
       insert.run(user.id, user.first_name, user.last_name ?? null, user.username ?? null, user.firstSeen, user.lastSeen);
     }
-    // Источник прав — ранее закреплённый ID, а не username или поле role в JSON.
+    // Источник прав — ранее закрепленный ID, а не username или поле role в JSON.
     this.db.prepare('UPDATE app_settings SET admin_id = ? WHERE id = 1').run(state.adminId);
   }
 
@@ -139,6 +159,7 @@ export class Users {
           last_name = excluded.last_name, username = excluded.username, last_seen = excluded.last_seen
       `).run(telegramUser.id, telegramUser.first_name, telegramUser.last_name ?? null,
         telegramUser.username ?? null, now, now);
+      this.tracking.ensureUser(telegramUser.id);
       const user = mapUser(this.db.prepare(selectUsers + ' AND u.id = ?').get(telegramUser.id)!);
       this.db.exec('COMMIT');
       return user;
@@ -191,23 +212,121 @@ export class Users {
     };
   }
 
-  setProfile(userId: number, input: ProfileInput): Profile {
+  setProfile(userId: number, input: ProfileInput, date?: string): Profile {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const old = this.getProfile(userId);
-      const start = old.startWeight === null || old.targetWeight !== input.targetWeight
-        ? input.currentWeight : old.startWeight;
-      this.db.prepare(`INSERT INTO body_profiles
-        (user_id, current_fat, target_fat, current_weight, target_weight, start_weight)
-        VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET
-        current_fat = excluded.current_fat, target_fat = excluded.target_fat,
-        current_weight = excluded.current_weight, target_weight = excluded.target_weight,
-        start_weight = excluded.start_weight`).run(userId, input.currentFat, input.targetFat,
-          input.currentWeight, input.targetWeight, start);
-      const profile = this.getProfile(userId);
+      if (date !== undefined) {
+        this.writeMeasurement(userId, date, validateMeasurement(input));
+        const lastWeight = this.latestWeight(userId, date);
+        const oldStartDate = this.db.prepare('SELECT start_weight_date FROM body_profiles WHERE user_id = ?')
+          .get(userId)?.start_weight_date as string | null | undefined;
+        const newStart = old.targetWeight !== input.targetWeight || (old.startWeight === null && !oldStartDate);
+        const start = newStart ? lastWeight.value ?? old.startWeight : old.startWeight;
+        const startDate = newStart ? lastWeight.date : oldStartDate ?? null;
+        // The pre-history current_* values remain undated legacy data.
+        this.db.prepare(`INSERT INTO body_profiles (user_id, target_fat, target_weight, start_weight, start_weight_date)
+          VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET
+          target_fat = excluded.target_fat, target_weight = excluded.target_weight,
+          start_weight = excluded.start_weight, start_weight_date = excluded.start_weight_date`)
+          .run(userId, input.targetFat, input.targetWeight, start, startDate);
+        this.refreshStartWeight(userId);
+      } else {
+        // Kept for importing an old profile that never recorded measurement dates.
+        const start = old.startWeight === null || old.targetWeight !== input.targetWeight
+          ? input.currentWeight : old.startWeight;
+        this.db.prepare(`INSERT INTO body_profiles
+          (user_id, current_fat, target_fat, current_weight, target_weight, start_weight)
+          VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET
+          current_fat = excluded.current_fat, target_fat = excluded.target_fat,
+          current_weight = excluded.current_weight, target_weight = excluded.target_weight,
+          start_weight = excluded.start_weight, start_weight_date = NULL`).run(userId, input.currentFat, input.targetFat,
+            input.currentWeight, input.targetWeight, start);
+      }
+      const profile = date === undefined ? this.getProfile(userId) : {
+        ...this.getProfile(userId), ...this.measurementValues(userId, date),
+      };
       this.db.exec('COMMIT');
       return profile;
     } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  private measurementValues(userId: number, date: string) {
+    const row = this.db.prepare(`SELECT current_weight AS currentWeight, current_fat AS currentFat
+      FROM daily_measurements WHERE user_id = ? AND date = ?`).get(userId, date);
+    return row ? { currentWeight: row.currentWeight as number | null, currentFat: row.currentFat as number | null }
+      : { currentWeight: null, currentFat: null };
+  }
+
+  getMeasurement(userId: number, date: string): Measurement {
+    validateActivityDate(date);
+    return { date, ...this.measurementValues(userId, date) };
+  }
+
+  private writeMeasurement(userId: number, date: string, input: MeasurementInput) {
+    validateActivityDate(date);
+    const old = this.measurementValues(userId, date);
+    const currentWeight = input.currentWeight === undefined ? old.currentWeight : input.currentWeight;
+    const currentFat = input.currentFat === undefined ? old.currentFat : input.currentFat;
+    if (currentWeight === null && currentFat === null) {
+      this.db.prepare('DELETE FROM daily_measurements WHERE user_id = ? AND date = ?').run(userId, date);
+    } else {
+      this.db.prepare(`INSERT INTO daily_measurements (user_id, date, current_weight, current_fat)
+        VALUES (?, ?, ?, ?) ON CONFLICT(user_id, date) DO UPDATE SET
+        current_weight = excluded.current_weight, current_fat = excluded.current_fat`)
+        .run(userId, date, currentWeight, currentFat);
+    }
+  }
+
+  setMeasurement(userId: number, date: string, input: MeasurementInput): Measurement {
+    const validated = validateMeasurement(input);
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.writeMeasurement(userId, date, validated);
+      if (validated.currentWeight != null) {
+        this.db.prepare(`INSERT INTO body_profiles (user_id, start_weight, start_weight_date) VALUES (?, ?, ?)
+          ON CONFLICT(user_id) DO UPDATE SET start_weight = excluded.start_weight, start_weight_date = excluded.start_weight_date
+          WHERE body_profiles.start_weight IS NULL AND body_profiles.start_weight_date IS NULL`)
+          .run(userId, validated.currentWeight, date);
+      }
+      this.refreshStartWeight(userId);
+      const measurement = this.getMeasurement(userId, date);
+      this.db.exec('COMMIT');
+      return measurement;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  getMeasurementHistory(userId: number) {
+    const profile = this.getProfile(userId);
+    return {
+      measurements: this.db.prepare(`SELECT date, current_weight AS currentWeight, current_fat AS currentFat
+        FROM daily_measurements WHERE user_id = ? ORDER BY date`).all(userId).map((row) => ({
+        date: String(row.date), currentWeight: row.currentWeight as number | null, currentFat: row.currentFat as number | null,
+      })),
+      legacyMeasurement: profile.currentWeight === null && profile.currentFat === null ? null
+        : { currentWeight: profile.currentWeight, currentFat: profile.currentFat },
+    };
+  }
+
+  private latestWeight(userId: number, throughDate: string) {
+    const row = this.db.prepare(`SELECT date, current_weight FROM daily_measurements
+      WHERE user_id = ? AND date <= ? AND current_weight IS NOT NULL ORDER BY date DESC LIMIT 1`)
+      .get(userId, throughDate);
+    return row ? { date: String(row.date), value: row.current_weight as number }
+      : { date: null, value: this.getProfile(userId).currentWeight };
+  }
+
+  private refreshStartWeight(userId: number) {
+    const startDate = this.db.prepare('SELECT start_weight_date FROM body_profiles WHERE user_id = ?')
+      .get(userId)?.start_weight_date;
+    if (!startDate) return;
+    // Keep the goal's starting date fixed, so correcting, clearing or restoring its
+    // first measurement changes the baseline without inventing weight loss.
+    const first = this.db.prepare(`SELECT current_weight FROM daily_measurements
+      WHERE user_id = ? AND date >= ? AND current_weight IS NOT NULL ORDER BY date LIMIT 1`)
+      .get(userId, startDate);
+    this.db.prepare('UPDATE body_profiles SET start_weight = ? WHERE user_id = ?')
+      .run(first?.current_weight ?? null, userId);
   }
 
   getFormIndex(userId: number, end: string) {
@@ -226,7 +345,12 @@ export class Users {
   }
 
   getDashboard(userId: number, date: string) {
-    const profile = this.getProfile(userId);
+    validateActivityDate(date);
+    const saved = this.getProfile(userId);
+    const profile = { ...saved, ...this.measurementValues(userId, date) };
+    const lastWeight = this.latestWeight(userId, date);
+    const lastMeasurement = this.db.prepare(`SELECT date FROM daily_measurements
+      WHERE user_id = ? AND date <= ? ORDER BY date DESC LIMIT 1`).get(userId, date);
     const count = this.db.prepare(`SELECT COALESCE(SUM(training), 0) AS training,
       COALESCE(SUM(micro_training), 0) AS microTraining,
       COALESCE(SUM(CASE WHEN training = 1 OR micro_training = 1 THEN 1 ELSE 0 END), 0) AS total
@@ -237,7 +361,9 @@ export class Users {
     const goal = goalRow ? Number(goalRow.goal) : null;
     const total = Number(count.total);
     return {
-      profile, progress: weightProgress(profile), month: date.slice(0, 7),
+      profile, progress: weightProgress({ ...saved, currentWeight: lastWeight.value }), month: date.slice(0, 7),
+      measurementDate: date, lastMeasurementDate: lastMeasurement ? String(lastMeasurement.date) : null,
+      progressMeasurementDate: lastWeight.date,
       workouts: { training: Number(count.training), microTraining: Number(count.microTraining),
         total, goal, progress: goal === null ? null : Math.min(100, Math.round(total / goal * 100)) },
     };
