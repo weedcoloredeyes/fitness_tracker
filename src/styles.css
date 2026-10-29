@@ -226,12 +226,14 @@ button.calendar-day:focus-visible { outline: 2px solid var(--ink); outline-offse
 .calendar-day-strength-partial .day-month { background: var(--paper); box-shadow: 0 0 0 1px var(--paper); }
 .calendar-cardio-contour { position: absolute; z-index: 1; top: 50%; left: 50%; width: 32px; height: 32px; transform: translate(-50%, -50%) rotate(-5deg); color: inherit; pointer-events: none; }
 .calendar-cardio-contour path { fill: none; stroke: currentColor; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.calendar-light-mark { position: absolute; z-index: 3; left: 20%; bottom: 5px; width: 60%; height: 0; border-top: 2px solid currentColor; transform: rotate(-5deg); pointer-events: none; }
 .calendar-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px 16px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font: 9px/1.5 var(--mono); }
 .calendar-legend > span { display: inline-flex; align-items: center; gap: 8px; }
 .calendar-key { position: relative; display: inline-block; flex: 0 0 20px; width: 20px; height: 24px; border: 1px solid var(--line); color: var(--ink); }
 .calendar-key-strength { border-color: var(--ink); background: var(--ink); }
 .calendar-key-cardio .calendar-cardio-contour { width: 21px; height: 21px; }
 .calendar-key-cardio .calendar-cardio-contour path { stroke-width: 1.2; }
+.calendar-key-light .calendar-light-mark { bottom: 5px; border-top-width: 1.5px; }
 .calendar-key-today::after { position: absolute; top: 3px; right: 3px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; content: ''; }
 .calendar-marks-note { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; text-align: center; }
 

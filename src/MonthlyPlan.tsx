@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { waitForActivitySaves } from './Today';
 import { trackingRequest, trackingTimezone } from './tracking-api';
-import type { MonthlyTracking } from '../server/tracking-types';
+import { ACTIVITY_CATEGORIES, type MonthlyTracking } from '../server/tracking-types';
 
 export type { MonthlyTracking } from '../server/tracking-types';
 type Draft = { strength: string; cardio: string };
+const categories = ['strength', 'cardio'] as const;
+const labels = { strength: 'тренировки', cardio: 'кардио' };
 type Props = {
   authenticated: boolean; active: boolean; activityRevision?: number; planRevision?: number; onChanged?: () => void;
 };
@@ -29,10 +31,13 @@ function readMonth(value: unknown, expectedMonth: string): MonthlyTracking {
   if (data.month !== expectedMonth || typeof data.start !== 'string' || typeof data.end !== 'string' ||
       !/^\d{4}-\d{2}-\d{2}$/.test(data.start) || !/^\d{4}-\d{2}-\d{2}$/.test(data.end) ||
       !Array.isArray(data.days) || !(data.score === null || finite(data.score, 100))) throw new Error('не удалось прочитать месячный план');
-  for (const category of [data.strength, data.cardio]) {
+  if (!data.weights || ACTIVITY_CATEGORIES.some((kind) => !finite(data.weights[kind], 100)) ||
+      Math.abs(ACTIVITY_CATEGORIES.reduce((total, kind) => total + data.weights[kind], 0) - 100) > 0.000001) throw new Error('не удалось прочитать месячный план');
+  for (const kind of categories) {
+    const category = data[kind];
     if (!category || !finite(category.earned, 31.000001) || !Number.isInteger(category.completedDays) || category.completedDays < 0 || category.completedDays > 31 ||
         !(category.goal === null || Number.isInteger(category.goal) && category.goal >= 1 && category.goal <= 1000) ||
-        !(category.score === null || finite(category.score, 50))) throw new Error('не удалось прочитать месячный план');
+        !(category.score === null || finite(category.score, data.weights[kind]))) throw new Error('не удалось прочитать месячный план');
   }
   return data;
 }
@@ -104,7 +109,9 @@ function MonthlyPanel({ authenticated, active, activityRevision = 0, planRevisio
 
   function edit() {
     if (!data) return;
-    setDrafts((old) => ({ ...old, [month]: { strength: data.strength.goal?.toString() ?? '', cardio: data.cardio.goal?.toString() ?? '' } }));
+    setDrafts((old) => ({ ...old, [month]: {
+      strength: data.strength.goal?.toString() ?? '', cardio: data.cardio.goal?.toString() ?? '',
+    } }));
     setSaveErrors((old) => ({ ...old, [month]: '' }));
     setSavedMonth(null);
   }
@@ -165,23 +172,24 @@ function MonthlyPanel({ authenticated, active, activityRevision = 0, planRevisio
               : <p className="monthly-status monthly-goals-needed">задай обе цели, чтобы рассчитать индекс</p>}
           </div>}
           <div className="monthly-categories">
-            {(['strength', 'cardio'] as const).map((category) => {
+            {categories.map((category) => {
               const progress = data[category];
-              const label = category === 'strength' ? 'физ нагрузка' : 'кардио';
+              const label = labels[category];
+              const max = data.weights[category];
               return <section key={category} className={`monthly-category monthly-${category}`} aria-label={label}>
-                <div className="monthly-category-heading"><h3>{label}</h3>{index && <span>{progress.score === null ? '—' : format(progress.score)} / 50</span>}</div>
+                <div className="monthly-category-heading"><h3>{label}</h3>{index && <span>{progress.score === null ? '—' : format(progress.score)} / {format(max)}</span>}</div>
                 <div className="monthly-category-total"><strong>{format(progress.earned)}</strong><span>{progress.goal === null ? 'цель не задана' : `/ ${progress.goal}`}</span></div>
                 <p className="monthly-category-unit">дней плана</p>
-                {progress.score !== null && <progress className="weight-progress monthly-category-progress" max="50" value={progress.score} aria-label={`выполнение плана: ${label}`} />}
+                {progress.score !== null && <progress className="weight-progress monthly-category-progress" max={max} value={progress.score} aria-label={`выполнение плана: ${label}`} />}
               </section>;
             })}
           </div>
-          <p className="monthly-rule">все отметки категории за день — один день плана</p>
-          {!draft && <button className="edit-profile monthly-edit" type="button" disabled={saving} onClick={edit}>{data.strength.goal === null && data.cardio.goal === null ? 'задать цели' : 'изменить цели'}</button>}
+          <p className="monthly-rule">легкая тренировка — половина основной; вместе за день — максимум один день плана</p>
+          {!draft && <button className="edit-profile monthly-edit" type="button" disabled={saving} onClick={edit}>{categories.every((category) => data[category].goal === null) ? 'задать цели' : 'изменить цели'}</button>}
           {draft && <form className="monthly-goals-form" onSubmit={(event) => void save(event)} aria-label="цели на месяц">
             <fieldset disabled={saving}><legend>цели на {monthLabel(month)}</legend>
-              <div className="monthly-goal-fields">{(['strength', 'cardio'] as const).map((category) => <label key={category}>
-                {category === 'strength' ? 'дни физ нагрузки' : 'дни кардио'}
+              <div className="monthly-goal-fields">{categories.map((category) => <label key={category}>
+                {category === 'strength' ? 'дни тренировок' : 'дни кардио'}
                 <input name={category} type="number" min="1" max="1000" step="1" inputMode="numeric" placeholder="не задана" value={draft[category]}
                   onChange={(event) => setDrafts((old) => ({ ...old, [month]: { ...old[month], [category]: event.target.value } }))} />
               </label>)}</div>

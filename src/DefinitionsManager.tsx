@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { ActivityCategory, ActivityDefinition } from '../server/tracking-types';
+import { ACTIVITY_CATEGORIES, ACTIVITY_LABELS, CURRENT_CATEGORY_WEIGHTS, type ActivityCategory, type ActivityDefinition } from '../server/tracking-types';
 import { trackingRequest, trackingTimezone } from './tracking-api';
 import { enqueueActivitySave, waitForActivitySaves } from './Today';
 
@@ -62,14 +62,14 @@ export function DefinitionsManager({ authenticated, active, onChanged, onBusyCha
       {open ? 'закрыть настройки' : 'настроить отметки'}
     </button>
     {open && <div className="definitions-content">
-      <p className="tracking-hint">у каждой категории по 50%. все ее отметки за день дают полный зачет. новый состав действует с сегодняшнего дня; прошлые дни сохраняются.</p>
+      <p className="tracking-hint">{ACTIVITY_CATEGORIES.map(category => `${ACTIVITY_LABELS[category]} — ${CURRENT_CATEGORY_WEIGHTS[category]}%`).join(', ')}. основная и легкая вместе дают максимум 50%. все отметки категории за день дают ее полный зачет. новый состав действует с сегодняшнего дня; прошлые дни сохраняются.</p>
       {!definitions && !error && <p role="status">загружаем отметки…</p>}
       {definitions?.filter(item => showArchived || !item.archived).map(item => <div className="definition-row" key={item.id}>
         {editing === item.id ? <form onSubmit={event => { event.preventDefault(); void mutate('PATCH', { id: item.id, name: draftName.trim() }, () => setEditing(null)); }}>
           <label className="sr-only" htmlFor={'rename-' + item.id}>новое название отметки</label>
           <input id={'rename-' + item.id} value={draftName} maxLength={80} required disabled={busy} onChange={event => setDraftName(event.target.value)} />
           <div className="tracking-row-actions"><button type="submit" disabled={busy}>сохранить</button><button type="button" disabled={busy} onClick={() => setEditing(null)}>отмена</button></div>
-        </form> : <><div><span className="definition-name">{item.name}</span><small>{item.category === 'strength' ? 'физ нагрузка' : 'кардио'}{item.archived ? ' · архив' : ''}</small></div>
+        </form> : <><div><span className="definition-name">{item.name}</span><small>{ACTIVITY_LABELS[item.category]}{item.archived ? ' · архив' : ''}</small></div>
           <div className="tracking-row-actions">
             <button type="button" disabled={busy} aria-label={'переименовать ' + item.name} onClick={() => { setEditing(item.id); setDraftName(item.name); }}>имя</button>
             <button type="button" disabled={busy} aria-label={(item.archived ? 'вернуть ' : 'в архив ') + item.name} onClick={() => void mutate('PATCH', { id: item.id, archived: !item.archived })}>{item.archived ? 'вернуть' : 'в архив'}</button>
@@ -80,7 +80,7 @@ export function DefinitionsManager({ authenticated, active, onChanged, onBusyCha
         <h3>новая отметка</h3>
         <label>название<input value={name} maxLength={80} required disabled={busy} placeholder="например, велосипед" onChange={event => setName(event.target.value)} /></label>
         <label>категория<select value={category} disabled={busy} onChange={event => setCategory(event.target.value as ActivityCategory)}>
-          <option value="strength">физ нагрузка · 50%</option><option value="cardio">кардио · 50%</option>
+          {ACTIVITY_CATEGORIES.map(value => <option key={value} value={value}>{ACTIVITY_LABELS[value]} · {CURRENT_CATEGORY_WEIGHTS[value]}%</option>)}
         </select></label>
         <button type="submit" className="save-profile" disabled={busy || !name.trim()}>{busy ? 'сохраняем…' : 'добавить отметку'}</button>
       </form>}

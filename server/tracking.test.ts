@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { Users } from './users';
-import type { ActivityCategory } from './tracking-types';
+import { CURRENT_CATEGORY_WEIGHTS, LEGACY_CATEGORY_WEIGHTS, type ActivityCategory } from './tracking-types';
 
 function fixture(legacy = false) {
   const dir = mkdtempSync(join(tmpdir(), 'fitness-tracking-'));
@@ -53,18 +53,21 @@ function defaultId(users: Users, userId: number, category: ActivityCategory): st
   return users.tracking.getDefinitions(userId).find(item => item.category === category && !item.archived)!.id;
 }
 
-test('new accounts receive two stable default definitions and getters do not create unknown accounts', () => {
+test('new accounts receive three stable default definitions and getters do not create unknown accounts', () => {
   const f = fixture();
   try {
     const definitions = f.users.tracking.getDefinitions(101);
     assert.deepEqual(definitions.map(({ name, category, archived }) => ({ name, category, archived })), [
-      { name: 'физ нагрузка', category: 'strength', archived: false },
+      { name: 'основная тренировка', category: 'strength', archived: false },
+      { name: 'легкая тренировка', category: 'light', archived: false },
       { name: 'кардио', category: 'cardio', archived: false },
     ]);
     f.users.identify({ id: 303, first_name: 'Third' });
-    assert.equal(f.users.tracking.getDefinitions(303).length, 2);
+    assert.equal(f.users.tracking.getDefinitions(303).length, 3);
     const day = f.users.tracking.getDay(101, '2026-01-01');
-    assert.equal(day.definitions.length, 2);
+    assert.equal(day.definitions.length, 3);
+    assert.deepEqual(day.weights, CURRENT_CATEGORY_WEIGHTS);
+    assert.equal(day.lightFraction, 0);
     assert.deepEqual(day.completedIds, []);
     assert.equal(day.score, 0);
     assert.throws(() => f.users.tracking.getDay(404, '2026-01-01'));
@@ -108,7 +111,7 @@ test('schema 7 migration preserves legacy users, marks, goals and profiles while
     assert.equal(f.users.tracking.getDay(101, '2026-01-01').strengthFraction, 0, 'restart must not reimport a cleared legacy completion');
     const raw = new DatabaseSync(f.file, { readOnly: true });
     try {
-      assert.equal(raw.prepare('PRAGMA user_version').get()!.user_version, 8);
+      assert.equal(raw.prepare('PRAGMA user_version').get()!.user_version, 9);
       assert.deepEqual(raw.prepare('PRAGMA foreign_key_check').all(), []);
       assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM users').get()!.count, 2);
       assert.deepEqual({ ...raw.prepare('SELECT * FROM app_settings').get() }, { id: 1, admin_id: 101, legacy_imported: 1 });
@@ -172,7 +175,7 @@ test('effective composition dates preserve earlier denominators through creation
     assert.equal(t.setCompletion(101, '2026-01-02', strength, true).strengthFraction, 0.5);
     const thirds = t.setCompletion(101, '2026-01-03', strength, true);
     assert.equal(thirds.strengthFraction, 1 / 3);
-    assert.ok(Math.abs(thirds.score - 50 / 3) < 1e-12);
+    assert.ok(Math.abs(thirds.score - CURRENT_CATEGORY_WEIGHTS.strength / 3) < 1e-12);
     assert.notEqual(thirds.score, Math.round(thirds.score));
 
     t.updateDefinition(101, second.id, { archived: true }, '2026-01-04');
@@ -236,8 +239,8 @@ test('monthly index sums exact daily fractions, caps each category separately an
     assert.equal(month.cardio.earned, 3);
     assert.equal(month.strength.completedDays, 0);
     assert.equal(month.cardio.completedDays, 0);
-    assert.equal(month.strength.score, 50);
-    assert.equal(month.cardio.score, 50);
+    assert.equal(month.strength.score, CURRENT_CATEGORY_WEIGHTS.strength);
+    assert.equal(month.cardio.score, CURRENT_CATEGORY_WEIGHTS.cardio);
     assert.equal(month.score, 100);
     t.workouts.setDay(101, '2026-01-06', { exercises: [
       { id: 'one', name: 'тяга', reps: 10, sets: 3, weight: 30 },
@@ -246,17 +249,56 @@ test('monthly index sums exact daily fractions, caps each category separately an
     assert.deepEqual(t.getMonth(101, '2026-01-06'), month, 'several exercises do not multiply a day credit');
     t.setGoals(101, '2026-01', { strength: 1, cardio: 100 });
     month = t.getMonth(101, '2026-01-06');
-    assert.equal(month.strength.score, 50);
-    assert.equal(month.cardio.score, 1.5);
-    assert.equal(month.score, 51.5);
+    assert.equal(month.strength.score, CURRENT_CATEGORY_WEIGHTS.strength);
+    assert.equal(month.cardio.score, CURRENT_CATEGORY_WEIGHTS.cardio * 0.03);
+    assert.equal(month.score, CURRENT_CATEGORY_WEIGHTS.strength + CURRENT_CATEGORY_WEIGHTS.cardio * 0.03);
     t.setGoals(101, '2026-01', { strength: null, cardio: 3 });
     month = t.getMonth(101, '2026-01-06');
     assert.equal(month.score, null);
     assert.equal(month.strength.score, null);
-    assert.equal(month.cardio.score, 50);
+    assert.equal(month.cardio.score, CURRENT_CATEGORY_WEIGHTS.cardio);
     assert.equal(t.getMonth(101, '2026-01-06', '2025-12').strength.earned, 1);
     assert.deepEqual(t.getMonth(101, '2026-01-06', '2026-02').days, []);
     assert.equal(t.getMonth(101, '2026-02-01', '2026-01').days.length, 31);
+  } finally { f.close(); }
+});
+
+test('light training earns half a physical day and shares the same cap with main training', () => {
+  const f = fixture();
+  try {
+    const t = f.users.tracking;
+    const strength = defaultId(f.users, 101, 'strength');
+    const light = defaultId(f.users, 101, 'light');
+    const cardio = defaultId(f.users, 101, 'cardio');
+    t.setGoals(101, '2026-01', { strength: 2, cardio: 1 });
+    let day = t.setCompletion(101, '2026-01-01', cardio, true);
+    day = t.setCompletion(101, day.date, light, true);
+    assert.equal(day.score, 75, 'light and cardio reach 75, not the full daily score');
+    assert.equal(t.getMonth(101, '2026-01-01').strength.earned, 0.5);
+    day = t.setCompletion(101, day.date, strength, true);
+    assert.equal(day.score, 100, 'all three categories must stay capped at 100');
+    assert.equal(t.getMonth(101, '2026-01-01').strength.earned, 1, 'main plus light is capped at one physical day');
+    assert.equal(t.getMonth(101, '2026-01-01').strength.completedDays, 1);
+    day = t.setCompletion(101, day.date, light, false);
+    assert.equal(day.score, 100, 'main plus cardio still reaches 100 without a light mark');
+
+    const extra = t.createDefinition(101, { name: 'легкая вторая', category: 'light' }, '2026-01-02');
+    const third = t.createDefinition(101, { name: 'легкая третья', category: 'light' }, '2026-01-02');
+    day = t.setCompletion(101, '2026-01-02', light, true);
+    assert.equal(day.lightFraction, 1 / 3);
+    assert.ok(Math.abs(day.score - 25 / 3) < 1e-12, 'partial light marks retain precision');
+    t.setCompletion(101, day.date, extra.id, true);
+    day = t.setCompletion(101, day.date, third.id, true);
+    assert.equal(day.score, 25);
+    assert.equal(t.getMonth(101, day.date).strength.earned, 1.5);
+    assert.equal(t.getMonth(101, day.date).strength.score, 37.5);
+    assert.equal(t.getMonth(101, day.date).score, 87.5);
+    t.setCompletion(101, day.date, strength, true);
+    assert.equal(t.getMonth(101, day.date).strength.earned, 2);
+    assert.equal(t.getMonth(101, day.date).score, 100);
+    f.restart();
+    assert.equal(f.users.tracking.getMonth(101, '2026-01-02').score, 100);
+    assert.equal(f.users.tracking.getDay(202, '2026-01-02').lightFraction, 0);
   } finally { f.close(); }
 });
 

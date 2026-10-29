@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { TrackingDay } from '../server/tracking-types';
+import { ACTIVITY_CATEGORIES, ACTIVITY_LABELS, calculateTrackingScore, type ActivityCategory, type TrackingDay } from '../server/tracking-types';
 import { DailyMeasurement } from './DailyMeasurement';
 import { DefinitionsManager } from './DefinitionsManager';
 import { WorkoutDiary } from './WorkoutDiary';
@@ -22,20 +22,23 @@ function request(date: string, options?: RequestInit) {
   return trackingRequest<{ day: TrackingDay }>('/api/tracking/day?timezone=' + encodeURIComponent(trackingTimezone) + '&date=' + encodeURIComponent(date), options).then(value => {
     const day = value.day;
     if (!day || day.date !== date || !Array.isArray(day.definitions) || !Array.isArray(day.completedIds)
-      || day.definitions.some(item => !item || typeof item.id !== 'string' || typeof item.name !== 'string' || !['strength', 'cardio'].includes(item.category))
+      || day.definitions.some(item => !item || typeof item.id !== 'string' || typeof item.name !== 'string' || !ACTIVITY_CATEGORIES.includes(item.category))
       || day.completedIds.some(id => typeof id !== 'string' || !day.definitions.some(item => item.id === id))
-      || ![day.strengthFraction, day.cardioFraction].every(fraction => Number.isFinite(fraction) && fraction >= 0 && fraction <= 1)
+      || ![day.strengthFraction, day.lightFraction, day.cardioFraction].every(fraction => Number.isFinite(fraction) && fraction >= 0 && fraction <= 1)
+      || !day.weights || !ACTIVITY_CATEGORIES.every(category => Number.isFinite(day.weights[category]) && day.weights[category] >= 0 && day.weights[category] <= 100)
+      || Math.abs(day.weights.strength + day.weights.cardio - 100) > 0.000001 || day.weights.light > day.weights.strength
       || !Number.isFinite(day.score) || day.score < 0 || day.score > 100) throw new Error('не удалось прочитать отметки за выбранный день.');
     return day;
   });
 }
 function withCompleted(day: TrackingDay, completedIds: string[]): TrackingDay {
-  const fraction = (category: 'strength' | 'cardio') => {
+  const fraction = (category: ActivityCategory) => {
     const items = day.definitions.filter(item => item.category === category);
     return items.length ? items.filter(item => completedIds.includes(item.id)).length / items.length : 0;
   };
-  const strengthFraction = fraction('strength'), cardioFraction = fraction('cardio');
-  return { ...day, completedIds, strengthFraction, cardioFraction, score: 50 * strengthFraction + 50 * cardioFraction };
+  const strengthFraction = fraction('strength'), lightFraction = fraction('light'), cardioFraction = fraction('cardio');
+  return { ...day, completedIds, strengthFraction, lightFraction, cardioFraction,
+    score: calculateTrackingScore({ strength: strengthFraction, light: lightFraction, cardio: cardioFraction }, day.weights) };
 }
 
 export function Today({ authenticated, active, selectedDate, onActivityChange, measurementRevision = 0, onMeasurementChange, onConfigurationChange, onSelectToday }: {
@@ -128,12 +131,14 @@ export function Today({ authenticated, active, selectedDate, onActivityChange, m
     </header>
     <DailyMeasurement date={date} authenticated={authenticated} active={active} measurementRevision={measurementRevision} onSaved={() => onMeasurementChange?.()} />
     <div className="tracking-day-heading"><h2 className="day-activity-heading">отметки за день</h2><span>{day ? Math.round(day.score) + ' / 100' : ''}</span></div>
+    {day && day.weights.light > 0 && <p className="tracking-hint">легкая — половина основной. вместе они дают до 50%, кардио — еще 50%.</p>}
     {authenticated && !day && !error ? <div className="activity-skeleton" role="status" aria-label="загрузка отметок"><div /><div /></div> : <div className="tracking-groups">
-      {(['strength', 'cardio'] as const).map(category => {
+      {ACTIVITY_CATEGORIES.filter(category => !day || day.weights[category] > 0).map(category => {
         const items = day?.definitions.filter(item => item.category === category) ?? [];
-        const fraction = day ? category === 'strength' ? day.strengthFraction : day.cardioFraction : 0;
-        return <section className="tracking-group" key={category} aria-label={category === 'strength' ? 'физ нагрузка' : 'кардио'}>
-          <div className="tracking-group-heading"><h3>{category === 'strength' ? 'физ нагрузка' : 'кардио'}</h3><span>{number(fraction * 50)} / 50</span></div>
+        const fraction = day ? day[`${category}Fraction`] : 0;
+        const weight = day?.weights[category];
+        return <section className="tracking-group" key={category} aria-label={ACTIVITY_LABELS[category]}>
+          <div className="tracking-group-heading"><h3>{ACTIVITY_LABELS[category]}</h3><span>{weight === undefined ? '—' : `${number(fraction * weight)} / ${number(weight)}`}</span></div>
           <div className="activity-checks">{items.map(item => <label className={'activity-option activity-' + category + (day?.completedIds.includes(item.id) ? ' is-completed' : '')} key={item.id}>
             <input type="checkbox" checked={!!day?.completedIds.includes(item.id)} disabled={!authenticated || !day || date > today || configurationBusy} onChange={event => toggle(item.id, event.target.checked)} />
             <span className="check-box" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 12 4 4 8-9" /></svg></span>

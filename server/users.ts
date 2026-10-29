@@ -111,7 +111,7 @@ export class Users {
         this.db.exec('UPDATE app_settings SET legacy_imported = 1 WHERE id = 1');
       }
       this.tracking = new Tracking(this.db);
-      this.db.exec('PRAGMA user_version = 8');
+      this.db.exec('PRAGMA user_version = 9');
       this.db.exec('COMMIT');
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch { /* транзакция могла не начаться */ }

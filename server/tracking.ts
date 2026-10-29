@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { validateActivityDate } from './activity';
 import { WorkoutDiary } from './workouts';
-import type { ActivityCategory, ActivityDefinition, MonthlyTracking, MonthlyTrackingCategory, TrackingDay, TrackingGoals } from './tracking-types';
+import { ACTIVITY_CATEGORIES, CURRENT_CATEGORY_WEIGHTS, LEGACY_CATEGORY_WEIGHTS, calculateTrackingScore, physicalTrainingFraction, type ActivityCategory, type ActivityDefinition,
+  type ActivityWeights, type MonthlyTracking, type MonthlyTrackingCategory, type TrackingDay, type TrackingGoals } from './tracking-types';
 
 export type { ActivityCategory, ActivityDefinition, MonthlyTracking, MonthlyTrackingCategory, TrackingDay, TrackingGoals } from './tracking-types';
 
 const FIRST_DATE = '0001-01-01';
 const DEFAULT_STRENGTH = 'strength';
+const DEFAULT_LIGHT = 'light';
 const DEFAULT_CARDIO = 'cardio';
 const LEGACY_MICRO = 'legacy-micro';
 
@@ -41,11 +43,57 @@ function definition(row: Record<string, unknown>, historical = false): ActivityD
     archived: historical ? false : !!row.archived };
 }
 
+function migrateCategories(db: DatabaseSync) {
+  const old = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tracking_definitions'").get();
+  if (!old || String(old.sql).includes("'light'")) return;
+  // Rebuild the parent and its children together while foreign keys remain enabled.
+  // All IDs, events, historical memberships and completions are copied unchanged.
+  db.exec(`
+    CREATE TABLE tracking_definitions_v9 (
+      user_id INTEGER NOT NULL REFERENCES users(id), id TEXT NOT NULL,
+      name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+      category TEXT NOT NULL CHECK (category IN ('strength', 'light', 'cardio')),
+      archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)), ordinal INTEGER NOT NULL,
+      PRIMARY KEY (user_id, id)
+    ) STRICT;
+    INSERT INTO tracking_definitions_v9 SELECT * FROM tracking_definitions;
+    CREATE TABLE tracking_definition_events_v9 (
+      user_id INTEGER NOT NULL, definition_id TEXT NOT NULL, effective_date TEXT NOT NULL,
+      active INTEGER NOT NULL CHECK (active IN (0, 1)),
+      PRIMARY KEY (user_id, definition_id, effective_date),
+      FOREIGN KEY (user_id, definition_id) REFERENCES tracking_definitions_v9(user_id, id)
+    ) STRICT;
+    INSERT INTO tracking_definition_events_v9 SELECT * FROM tracking_definition_events;
+    CREATE TABLE tracking_day_definitions_v9 (
+      user_id INTEGER NOT NULL, date TEXT NOT NULL, definition_id TEXT NOT NULL,
+      PRIMARY KEY (user_id, date, definition_id),
+      FOREIGN KEY (user_id, date) REFERENCES tracking_legacy_days(user_id, date),
+      FOREIGN KEY (user_id, definition_id) REFERENCES tracking_definitions_v9(user_id, id)
+    ) STRICT;
+    INSERT INTO tracking_day_definitions_v9 SELECT * FROM tracking_day_definitions;
+    CREATE TABLE tracking_completions_v9 (
+      user_id INTEGER NOT NULL, date TEXT NOT NULL, definition_id TEXT NOT NULL,
+      PRIMARY KEY (user_id, date, definition_id),
+      FOREIGN KEY (user_id, definition_id) REFERENCES tracking_definitions_v9(user_id, id)
+    ) STRICT;
+    INSERT INTO tracking_completions_v9 SELECT * FROM tracking_completions;
+    DROP TABLE tracking_definition_events;
+    DROP TABLE tracking_day_definitions;
+    DROP TABLE tracking_completions;
+    DROP TABLE tracking_definitions;
+    ALTER TABLE tracking_definitions_v9 RENAME TO tracking_definitions;
+    ALTER TABLE tracking_definition_events_v9 RENAME TO tracking_definition_events;
+    ALTER TABLE tracking_day_definitions_v9 RENAME TO tracking_day_definitions;
+    ALTER TABLE tracking_completions_v9 RENAME TO tracking_completions;
+  `);
+}
+
 export class Tracking {
   readonly workouts: WorkoutDiary;
 
   // Called by Users inside its existing migration transaction.
   constructor(private readonly db: DatabaseSync) {
+    migrateCategories(db);
     db.exec(`
       CREATE TABLE IF NOT EXISTS tracking_users (
         user_id INTEGER PRIMARY KEY REFERENCES users(id)
@@ -54,7 +102,7 @@ export class Tracking {
         user_id INTEGER NOT NULL REFERENCES users(id),
         id TEXT NOT NULL,
         name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
-        category TEXT NOT NULL CHECK (category IN ('strength', 'cardio')),
+        category TEXT NOT NULL CHECK (category IN ('strength', 'light', 'cardio')),
         archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
         ordinal INTEGER NOT NULL,
         PRIMARY KEY (user_id, id)
@@ -93,6 +141,11 @@ export class Tracking {
         goal INTEGER NOT NULL CHECK (goal BETWEEN 1 AND 1000),
         PRIMARY KEY (user_id, month)
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS tracking_category_versions (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id),
+        activation_date TEXT CHECK (activation_date IS NULL OR
+          (length(activation_date) = 10 AND activation_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'))
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS tracking_migrations (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         legacy_imported INTEGER NOT NULL CHECK (legacy_imported = 1)
@@ -107,10 +160,15 @@ export class Tracking {
 
   ensureUser(userId: number): void {
     this.requireUser(userId);
-    if (this.db.prepare('SELECT 1 FROM tracking_users WHERE user_id = ?').get(userId)) return;
-    for (const [id, name, category, ordinal] of [
-      [DEFAULT_STRENGTH, 'физ нагрузка', 'strength', 0], [DEFAULT_CARDIO, 'кардио', 'cardio', 1],
-    ] as const) {
+    if (this.db.prepare('SELECT 1 FROM tracking_users WHERE user_id = ?').get(userId)) {
+      this.db.prepare('INSERT OR IGNORE INTO tracking_category_versions (user_id, activation_date) VALUES (?, NULL)').run(userId);
+      return;
+    }
+    const days = this.db.prepare('SELECT date, training, micro_training, walking FROM daily_activity WHERE user_id = ? ORDER BY date').all(userId);
+    const defaults: [string, string, ActivityCategory, number][] = days.length
+      ? [[DEFAULT_STRENGTH, 'физ нагрузка', 'strength', 0], [DEFAULT_CARDIO, 'кардио', 'cardio', 1]]
+      : [[DEFAULT_STRENGTH, 'основная тренировка', 'strength', 0], [DEFAULT_LIGHT, 'легкая тренировка', 'light', 1], [DEFAULT_CARDIO, 'кардио', 'cardio', 2]];
+    for (const [id, name, category, ordinal] of defaults) {
       this.db.prepare(`INSERT INTO tracking_definitions (user_id, id, name, category, archived, ordinal)
         VALUES (?, ?, ?, ?, 0, ?)`).run(userId, id, name, category, ordinal);
       this.db.prepare(`INSERT INTO tracking_definition_events (user_id, definition_id, effective_date, active)
@@ -118,7 +176,6 @@ export class Tracking {
     }
     // Early databases could contain marks before their user was registered.
     // Leave those rows intact and import them only once a real identify creates the user.
-    const days = this.db.prepare('SELECT date, training, micro_training, walking FROM daily_activity WHERE user_id = ? ORDER BY date').all(userId);
     for (const day of days) {
       const date = validateActivityDate(day.date);
       this.db.prepare(`INSERT INTO tracking_definitions (user_id, id, name, category, archived, ordinal)
@@ -130,6 +187,31 @@ export class Tracking {
       }
     }
     this.db.prepare('INSERT INTO tracking_users (user_id) VALUES (?)').run(userId);
+    this.db.prepare('INSERT INTO tracking_category_versions (user_id, activation_date) VALUES (?, ?)').run(userId, days.length ? null : FIRST_DATE);
+  }
+
+  // Activation waits for an authenticated request so "today" uses the user's timezone.
+  upgradeUser(userId: number, today: string): void {
+    this.requireUser(userId);
+    validateActivityDate(today);
+    if (this.db.prepare('SELECT activation_date FROM tracking_category_versions WHERE user_id = ?').get(userId)?.activation_date) return;
+    this.atomic(() => {
+      const ordinal = Number(this.db.prepare('SELECT COALESCE(MAX(ordinal), -1) + 1 AS next FROM tracking_definitions WHERE user_id = ?').get(userId)!.next);
+      this.db.prepare(`INSERT INTO tracking_definitions (user_id, id, name, category, archived, ordinal)
+        VALUES (?, ?, 'легкая тренировка', 'light', 0, ?)`).run(userId, DEFAULT_LIGHT, ordinal);
+      this.db.prepare('INSERT INTO tracking_definition_events (user_id, definition_id, effective_date, active) VALUES (?, ?, ?, 1)')
+        .run(userId, DEFAULT_LIGHT, today);
+      this.db.prepare(`INSERT INTO tracking_day_definitions (user_id, date, definition_id)
+        SELECT user_id, date, ? FROM tracking_legacy_days WHERE user_id = ? AND date >= ?`).run(DEFAULT_LIGHT, userId, today);
+      this.db.prepare("UPDATE tracking_definitions SET name = 'основная тренировка' WHERE user_id = ? AND id = ? AND name = 'физ нагрузка'")
+        .run(userId, DEFAULT_STRENGTH);
+      this.db.prepare('UPDATE tracking_category_versions SET activation_date = ? WHERE user_id = ?').run(today, userId);
+    });
+  }
+
+  private weights(userId: number, date: string): ActivityWeights {
+    const activation = this.db.prepare('SELECT activation_date FROM tracking_category_versions WHERE user_id = ?').get(userId)?.activation_date;
+    return { ...(typeof activation === 'string' && date >= activation ? CURRENT_CATEGORY_WEIGHTS : LEGACY_CATEGORY_WEIGHTS) };
   }
 
   private requireUser(userId: number): void {
@@ -159,7 +241,7 @@ export class Tracking {
   createDefinition(userId: number, input: { name: string; category: ActivityCategory }, effectiveDate: string): ActivityDefinition {
     this.requireUser(userId);
     validateActivityDate(effectiveDate);
-    if (!input || typeof input !== 'object' || Array.isArray(input) || (input.category !== 'strength' && input.category !== 'cardio')) {
+    if (!input || typeof input !== 'object' || Array.isArray(input) || !ACTIVITY_CATEGORIES.includes(input.category)) {
       throw new Error('Invalid activity category');
     }
     const name = nameValue(input.name);
@@ -221,8 +303,11 @@ export class Tracking {
       return eligible.length ? eligible.filter(item => completed.has(item.id)).length / eligible.length : 0;
     };
     const strengthFraction = fraction('strength');
+    const lightFraction = fraction('light');
     const cardioFraction = fraction('cardio');
-    return { date, definitions, completedIds, strengthFraction, cardioFraction, score: 50 * strengthFraction + 50 * cardioFraction };
+    const weights = this.weights(userId, date);
+    return { date, definitions, completedIds, strengthFraction, lightFraction, cardioFraction, weights,
+      score: calculateTrackingScore({ strength: strengthFraction, light: lightFraction, cardio: cardioFraction }, weights) };
   }
 
   setCompletion(userId: number, date: string, id: string, completed: boolean): TrackingDay {
@@ -258,17 +343,18 @@ export class Tracking {
     last.setUTCMonth(last.getUTCMonth() + 1, 0);
     const end = [last.toISOString().slice(0, 10), today].sort()[0];
     const days = end < start ? [] : this.getCalendar(userId, start, end);
-    const category = (kind: ActivityCategory): MonthlyTrackingCategory => {
-      const values = days.map(day => kind === 'strength' ? day.strengthFraction : day.cardioFraction);
+    const weights = { ...LEGACY_CATEGORY_WEIGHTS };
+    const category = (kind: 'strength' | 'cardio'): MonthlyTrackingCategory => {
+      const values = days.map(day => kind === 'strength' ? physicalTrainingFraction(day) : day.cardioFraction);
       const earned = sum(values);
       const table = kind === 'strength' ? 'monthly_workout_goals' : 'monthly_cardio_goals';
       const row = this.db.prepare(`SELECT goal FROM ${table} WHERE user_id = ? AND month = ?`).get(userId, month);
       const goal = row ? Number(row.goal) : null;
-      return { earned, goal, score: goal === null ? null : 50 * Math.min(earned / goal, 1), completedDays: values.filter(value => value === 1).length };
+      return { earned, goal, score: weights[kind] === 0 ? 0 : goal === null ? null : weights[kind] * Math.min(earned / goal, 1), completedDays: values.filter(value => value === 1).length };
     };
     const strength = category('strength');
     const cardio = category('cardio');
-    return { month, start, end, score: strength.score === null || cardio.score === null ? null : strength.score + cardio.score,
+    return { month, start, end, weights, score: strength.score === null || cardio.score === null ? null : sum([strength.score, cardio.score]),
       strength, cardio, days };
   }
 
@@ -277,10 +363,11 @@ export class Tracking {
     monthValue(month);
     if (!goals || typeof goals !== 'object' || Array.isArray(goals)) throw new Error('Invalid goals');
     for (const value of [goals.strength, goals.cardio]) {
-      if (value !== null && (!Number.isInteger(value) || value < 1 || value > 1000)) throw new Error('Invalid goal');
+      if (value !== null && (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 1000)) throw new Error('Invalid goal');
     }
     this.atomic(() => {
-      for (const [table, value] of [['monthly_workout_goals', goals.strength], ['monthly_cardio_goals', goals.cardio]] as const) {
+      const updates: [string, number | null][] = [['monthly_workout_goals', goals.strength], ['monthly_cardio_goals', goals.cardio]];
+      for (const [table, value] of updates) {
         if (value === null) this.db.prepare(`DELETE FROM ${table} WHERE user_id = ? AND month = ?`).run(userId, month);
         else this.db.prepare(`INSERT INTO ${table} (user_id, month, goal) VALUES (?, ?, ?)
           ON CONFLICT(user_id, month) DO UPDATE SET goal = excluded.goal`).run(userId, month, value);

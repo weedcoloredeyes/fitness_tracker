@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { telegram } from './telegram';
 import { waitForActivitySaves } from './Today';
 import { MonthlyPlan } from './MonthlyPlan';
+import { normalizeMeasurementInput, parseMeasurementInput } from './measurement-input';
 
 type Profile = { currentFat: number | null; targetFat: number | null; currentWeight: number | null; targetWeight: number | null; startWeight: number | null };
 type Dashboard = { profile: Profile; progress: number | null; measurementDate?: string; progressMeasurementDate?: string | null; month: string; workouts: { training: number; microTraining: number; total: number; goal: number | null; progress: number | null } };
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const number = (value: number | null | undefined) => value == null ? '—' : value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+const normalizeInput = (event: ChangeEvent<HTMLInputElement>) => { event.currentTarget.value = normalizeMeasurementInput(event.currentTarget.value); };
 
 async function dashboardRequest(options?: RequestInit, path = '/api/dashboard'): Promise<Dashboard> {
   const res = await fetch(`${path}?timezone=${encodeURIComponent(timezone)}`, {
@@ -74,18 +76,19 @@ export function Home({ authenticated, active, measurementRevision = 0, onMeasure
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    const value = (key: string) => {
-      const raw = String(form.get(key) ?? '').trim().replace(',', '.');
-      return raw === '' ? null : Number(raw);
-    };
+    let values: Pick<Profile, 'currentFat' | 'targetFat' | 'currentWeight' | 'targetWeight'>;
+    try {
+      const value = (key: string, min: number, max: number) => parseMeasurementInput(String(form.get(key) ?? ''), min, max);
+      values = {
+        currentFat: value('currentFat', 1, 70), targetFat: value('targetFat', 1, 70),
+        currentWeight: value('currentWeight', 20, 400), targetWeight: value('targetWeight', 20, 400),
+      };
+    } catch (err) { setError(err instanceof Error ? err.message : 'проверь значения замера'); return; }
     revision.current++;
     setSaving(true);
     setError('');
     try {
-      setData(await dashboardRequest({ method: 'PATCH', body: JSON.stringify({
-        currentFat: value('currentFat'), targetFat: value('targetFat'),
-        currentWeight: value('currentWeight'), targetWeight: value('targetWeight'),
-      }) }));
+      setData(await dashboardRequest({ method: 'PATCH', body: JSON.stringify(values) }));
       setEditing(false);
       onMeasurementChange?.();
     } catch (err) { setError(err instanceof Error ? err.message : 'Не удалось сохранить данные.'); }
@@ -135,10 +138,10 @@ export function Home({ authenticated, active, measurementRevision = 0, onMeasure
         <h2>Мои показатели</h2>
         <fieldset disabled={saving}><div className="profile-fields">
           {(['currentFat', 'targetFat'] as const).map((key) => <label key={key}>{key === 'currentFat' ? 'процент жира за сегодня' : 'целевой процент жира'}
-            <input name={key} type="number" inputMode="decimal" min="1" max="70" step="0.1"
+            <input name={key} type="text" inputMode="decimal" onChange={normalizeInput}
               defaultValue={p?.[key] ?? ''} placeholder="Не указан" /></label>)}
-          <label>вес за сегодня, кг<input name="currentWeight" type="number" inputMode="decimal" min="20" max="400" step="0.1" defaultValue={p?.currentWeight ?? ''} placeholder="Не указан" /></label>
-          <label>Целевой вес, кг<input name="targetWeight" type="number" inputMode="decimal" min="20" max="400" step="0.1" defaultValue={p?.targetWeight ?? ''} placeholder="Не указан" /></label>
+          <label>вес за сегодня, кг<input name="currentWeight" type="text" inputMode="decimal" onChange={normalizeInput} defaultValue={p?.currentWeight ?? ''} placeholder="Не указан" /></label>
+          <label>Целевой вес, кг<input name="targetWeight" type="text" inputMode="decimal" onChange={normalizeInput} defaultValue={p?.targetWeight ?? ''} placeholder="Не указан" /></label>
         </div><p className="form-hint">При смене цели прогресс начнется от текущего веса.</p>
           <button className="save-profile" type="submit">Сохранить</button>
         </fieldset>

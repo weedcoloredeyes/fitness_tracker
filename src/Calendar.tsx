@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { telegram } from './telegram';
 import { trackingTimezone } from './tracking-api';
 import { waitForActivitySaves, type Activity } from './Today';
+import { ACTIVITY_CATEGORIES, ACTIVITY_LABELS, type ActivityCategory } from '../server/tracking-types';
 
 const weekdays = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
 const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
@@ -63,7 +64,7 @@ export function Calendar({ onSelectDate, authenticated, active, activities, acti
       if (!response.ok) throw new Error(data.error);
       if (!controller.signal.aborted) { onLoaded(data.days); setError(''); }
     }).catch((err: unknown) => {
-      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'Не удалось загрузить отметки.');
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'не удалось загрузить отметки.');
     });
     return () => controller.abort();
   }, [authenticated, active, rangeStart, rangeEnd, activityRevision, onLoaded, retry]);
@@ -71,7 +72,7 @@ export function Calendar({ onSelectDate, authenticated, active, activities, acti
   return (
     <section className="calendar" aria-labelledby="calendar-title">
       <header className="calendar-header">
-        <h1 id="calendar-title">Календарь</h1>
+        <h1 id="calendar-title">календарь</h1>
         <span className="calendar-period">
           {weeks[0][0].toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} — {weeks[11][6].toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }).replace(' г.', '')}
         </span>
@@ -81,37 +82,39 @@ export function Calendar({ onSelectDate, authenticated, active, activities, acti
         <button type="button" disabled={weekOffset === 0} onClick={() => setWeekOffset(0)}>сегодня</button>
         <button type="button" aria-label="следующие 12 недель" onClick={() => setWeekOffset((value) => value + 12)}>→</button>
       </nav>
-      <table className="calendar-grid" aria-label="Календарь на 12 недель">
+      <table className="calendar-grid" aria-label="календарь на 12 недель">
         <thead>
           <tr>
-            <th className="week-heading" scope="col"><span className="sr-only">Неделя</span></th>
+            <th className="week-heading" scope="col"><span className="sr-only">неделя</span></th>
             {weekdays.map((day) => <th key={day} scope="col">{day}</th>)}
           </tr>
         </thead>
         <tbody>
           {weeks.map((week, index) => (
             <tr key={dateKey(week[0])}>
-              <th className="week-number" scope="row"><span className="sr-only">Неделя </span>{index + 1}</th>
+              <th className="week-number" scope="row"><span className="sr-only">неделя </span>{index + 1}</th>
               {week.map((date, day) => {
                 const activity = activities[dateKey(date)];
                 const labels = activity?.definitions.filter(item => activity.completedIds.includes(item.id)).map(item => item.name) ?? [];
                 const isToday = dateKey(date) === dateKey(today);
                 const showMonth = date.getDate() === 1 || (index === 0 && day === 0);
                 const strength = Math.max(0, Math.min(1, activity?.strengthFraction ?? 0));
+                const light = Math.max(0, Math.min(1, activity?.lightFraction ?? 0));
                 const cardio = Math.max(0, Math.min(1, activity?.cardioFraction ?? 0));
                 const partialStrength = strength > 0 && strength < 1;
-                const categoryLabel = (category: 'strength' | 'cardio') => {
+                const categoryLabel = (category: ActivityCategory) => {
                   const definitions = activity?.definitions.filter(item => item.category === category) ?? [];
                   const completed = definitions.filter(item => activity?.completedIds.includes(item.id)).length;
-                  return completed ? `, ${category === 'strength' ? 'физ нагрузка' : 'кардио'} ${completed} из ${definitions.length}` : '';
+                  return completed ? `, ${ACTIVITY_LABELS[category]} ${completed} из ${definitions.length}` : '';
                 };
                 return (
                   <td key={dateKey(date)}>
                     <button type="button" onClick={() => onSelectDate(dateKey(date))} className={`calendar-day${isToday ? ' calendar-day-today' : ''}${strength === 1 ? ' calendar-day-strength-full' : ''}${partialStrength ? ' calendar-day-strength-partial' : ''}`}
                       aria-current={isToday ? 'date' : undefined}
-                      aria-label={`${date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}${isToday ? ', сегодня' : ''}${labels.length ? ', выполнено: ' + labels.join(', ') : ''}${categoryLabel('strength')}${categoryLabel('cardio')}`}>
+                      aria-label={`${date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}${isToday ? ', сегодня' : ''}${labels.length ? ', выполнено: ' + labels.join(', ') : ''}${ACTIVITY_CATEGORIES.map(categoryLabel).join('')}`}>
                       {partialStrength && <span className="calendar-strength-shading" style={{ height: `${strength * 100}%` }} aria-hidden="true" />}
                       {cardio > 0 && <CardioContour fraction={cardio} />}
+                      {light > 0 && <span className="calendar-light-mark" style={{ width: `${light * 60}%` }} aria-hidden="true" />}
                       {showMonth && <span className="day-month" aria-hidden="true">{months[date.getMonth()]}</span>}
                       <span className="day-number" aria-hidden="true">{date.getDate()}</span>
                     </button>
@@ -122,14 +125,15 @@ export function Calendar({ onSelectDate, authenticated, active, activities, acti
           ))}
         </tbody>
       </table>
-      <div className="calendar-legend" aria-label="Обозначения отметок">
-        <span><span className="calendar-key calendar-key-strength" aria-hidden="true" />физ нагрузка</span>
+      <div className="calendar-legend" aria-label="обозначения отметок">
+        <span><span className="calendar-key calendar-key-strength" aria-hidden="true" />основная тренировка</span>
+        <span><span className="calendar-key calendar-key-light" aria-hidden="true"><span className="calendar-light-mark" /></span>легкая тренировка</span>
         <span><span className="calendar-key calendar-key-cardio" aria-hidden="true"><CardioContour /></span>кардио</span>
         <span><span className="calendar-key calendar-key-today" aria-hidden="true" />сегодня</span>
       </div>
-      <p className="calendar-marks-note">штриховка и незамкнутый контур — часть отметок категории</p>
+      <p className="calendar-marks-note">штриховка, короткая черта и незамкнутый контур — часть отметок категории</p>
       {error && <div className="activity-error" role="alert"><p>{error}</p>
-        <button className="retry-button" onClick={() => setRetry((value) => value + 1)}>Повторить</button>
+        <button className="retry-button" onClick={() => setRetry((value) => value + 1)}>повторить</button>
       </div>}
     </section>
   );

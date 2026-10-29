@@ -115,10 +115,11 @@ export function createApp(token: string, users: Users, root = resolve('dist'), o
             const today = todayInTimezone(requestUrl.searchParams.get('timezone'));
             identifyUser(user);
             const store = users.tracking;
+            store.upgradeUser(user.id, today);
             if (path === '/api/tracking/definitions' && ['GET', 'POST', 'PATCH'].includes(req.method ?? '')) {
               if (req.method === 'POST') {
                 const input = await body(req);
-                store.createDefinition(user.id, input as { name: string; category: 'strength' | 'cardio' }, today);
+                store.createDefinition(user.id, input as { name: string; category: 'strength' | 'light' | 'cardio' }, today);
               } else if (req.method === 'PATCH') {
                 const input = await body(req);
                 if (typeof input.id !== 'string') throw new Error('Invalid definition');

@@ -1,4 +1,21 @@
-export type ActivityCategory = 'strength' | 'cardio';
+export const ACTIVITY_CATEGORIES = ['strength', 'light', 'cardio'] as const;
+export type ActivityCategory = typeof ACTIVITY_CATEGORIES[number];
+export type ActivityWeights = Record<ActivityCategory, number>;
+export const ACTIVITY_LABELS: Record<ActivityCategory, string> = {
+  strength: 'основная тренировка', light: 'легкая тренировка', cardio: 'кардио',
+};
+export const LEGACY_CATEGORY_WEIGHTS: ActivityWeights = { strength: 50, light: 0, cardio: 50 };
+// Kept in one browser-safe module so optimistic and persisted scores use identical weights.
+export const CURRENT_CATEGORY_WEIGHTS: ActivityWeights = { strength: 50, light: 25, cardio: 50 };
+
+export function calculateTrackingScore(fractions: Record<ActivityCategory, number>, weights: ActivityWeights): number {
+  return Math.min(weights.strength, weights.strength * fractions.strength + weights.light * fractions.light)
+    + weights.cardio * fractions.cardio;
+}
+
+export function physicalTrainingFraction(day: Pick<TrackingDay, 'strengthFraction' | 'lightFraction' | 'weights'>): number {
+  return Math.min(day.strengthFraction + day.weights.light / day.weights.strength * day.lightFraction, 1);
+}
 
 export type ActivityDefinition = {
   id: string;
@@ -12,7 +29,9 @@ export type TrackingDay = {
   definitions: ActivityDefinition[];
   completedIds: string[];
   strengthFraction: number;
+  lightFraction: number;
   cardioFraction: number;
+  weights: ActivityWeights;
   score: number;
 };
 
@@ -28,6 +47,7 @@ export type MonthlyTracking = {
   start: string;
   end: string;
   score: number | null;
+  weights: ActivityWeights;
   strength: MonthlyTrackingCategory;
   cardio: MonthlyTrackingCategory;
   days: TrackingDay[];

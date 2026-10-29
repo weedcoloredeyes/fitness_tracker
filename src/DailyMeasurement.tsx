@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { telegram } from './telegram';
+import { normalizeMeasurementInput, parseMeasurementInput } from './measurement-input';
 
 type Measurement = { date: string; currentWeight: number | null; currentFat: number | null };
 type Draft = { weight: string; fat: string };
@@ -47,15 +48,6 @@ async function measurementRequest(date: string, options?: RequestInit) {
   const value = await response.json();
   if (!response.ok) throw new Error(typeof value?.error === 'string' ? value.error : 'не удалось получить замер');
   return readMeasurement(value, date);
-}
-
-function parseValue(raw: string, min: number, max: number): number | null {
-  if (!raw.trim()) return null;
-  const value = Number(raw.trim().replace(',', '.'));
-  if (!Number.isFinite(value) || value < min || value > max || Math.abs(value * 10 - Math.round(value * 10)) > 1e-7) {
-    throw new Error('проверь значения: вес от 20 до 400 кг, жир от 1 до 70%, не более одного знака после запятой');
-  }
-  return value;
 }
 
 export function DailyMeasurement({ date, authenticated, active, measurementRevision, onSaved }: Props) {
@@ -112,8 +104,8 @@ export function DailyMeasurement({ date, authenticated, active, measurementRevis
     let currentWeight: number | null;
     let currentFat: number | null;
     try {
-      currentWeight = parseValue(day.draft.weight, 20, 400);
-      currentFat = parseValue(day.draft.fat, 1, 70);
+      currentWeight = parseMeasurementInput(day.draft.weight, 20, 400);
+      currentFat = parseMeasurementInput(day.draft.fat, 1, 70);
     } catch (error) {
       update(date, (current) => ({ ...current, saveError: message(error, 'проверь значения замера') }));
       return;
@@ -159,10 +151,10 @@ export function DailyMeasurement({ date, authenticated, active, measurementRevis
         </>}
     {day.editing && !future && <form className="measurement-form" onSubmit={(event) => void save(event)}>
       <fieldset disabled={day.saving}><div className="measurement-fields">
-        <label>вес, кг<input name="dayWeight" type="number" inputMode="decimal" min="20" max="400" step="0.1" value={day.draft.weight}
-          placeholder="не записан" onChange={(event) => update(date, (current) => ({ ...current, draft: { ...current.draft, weight: event.target.value } }))} /></label>
-        <label>жир, %<input name="dayFat" type="number" inputMode="decimal" min="1" max="70" step="0.1" value={day.draft.fat}
-          placeholder="не записан" onChange={(event) => update(date, (current) => ({ ...current, draft: { ...current.draft, fat: event.target.value } }))} /></label>
+        <label>вес, кг<input name="dayWeight" type="text" inputMode="decimal" value={day.draft.weight}
+          placeholder="не записан" onChange={(event) => update(date, (current) => ({ ...current, draft: { ...current.draft, weight: normalizeMeasurementInput(event.target.value) } }))} /></label>
+        <label>жир, %<input name="dayFat" type="text" inputMode="decimal" value={day.draft.fat}
+          placeholder="не записан" onChange={(event) => update(date, (current) => ({ ...current, draft: { ...current.draft, fat: normalizeMeasurementInput(event.target.value) } }))} /></label>
       </div><p className="measurement-reminder">пустое поле убирает значение только за выбранный день</p>
         <div className="measurement-actions"><button type="submit" className="save-profile">{day.saving ? 'сохраняем…' : 'сохранить замер'}</button>
           <button type="button" className="retry-button" onClick={() => update(date, (current) => ({ ...current, editing: false, saveError: '' }))}>отменить</button></div>
