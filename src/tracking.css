@@ -1,3 +1,9 @@
+.today-date-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; }
+.today-date-row h1 { min-width:0; font-size:clamp(26px,7.2vw,32px); }
+.today-date-controls { display:flex; gap:4px; }
+.today-date-controls button { display:grid; place-items:center; width:44px; height:44px; min-width:44px; padding:0; border:1px solid var(--line); border-radius:0; background:transparent; color:var(--ink); font:18px/1 var(--mono); touch-action:manipulation; }
+.today-date-controls button:disabled { color:var(--muted); }
+.today-date-controls button:active:not(:disabled) { background:var(--label); }
 .tracking-day-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-top:26px; border-top:1px solid var(--line); }
 .tracking-day-heading .day-activity-heading { margin:16px 0; }
 .tracking-day-heading > span, .tracking-group-heading > span { font:10px/1.5 var(--mono); color:var(--muted); }

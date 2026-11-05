@@ -111,7 +111,7 @@ test('schema 7 migration preserves legacy users, marks, goals and profiles while
     assert.equal(f.users.tracking.getDay(101, '2026-01-01').strengthFraction, 0, 'restart must not reimport a cleared legacy completion');
     const raw = new DatabaseSync(f.file, { readOnly: true });
     try {
-      assert.equal(raw.prepare('PRAGMA user_version').get()!.user_version, 9);
+      assert.equal(raw.prepare('PRAGMA user_version').get()!.user_version, 11);
       assert.deepEqual(raw.prepare('PRAGMA foreign_key_check').all(), []);
       assert.equal(raw.prepare('SELECT COUNT(*) AS count FROM users').get()!.count, 2);
       assert.deepEqual({ ...raw.prepare('SELECT * FROM app_settings').get() }, { id: 1, admin_id: 101, legacy_imported: 1 });

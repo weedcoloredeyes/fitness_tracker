@@ -1,0 +1,29 @@
+.light-workout { min-width: 0; margin: 10px 0 18px; }
+.light-workout-pick { margin-top: 2px; }
+.light-workout-card { border: 1px solid var(--line); background: transparent; }
+.light-workout-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; width: 100%; min-height: 48px; padding: 13px 14px; border: 0; background: transparent; color: var(--ink); font: 12px/1.6 var(--sans); text-align: left; }
+.light-workout-heading > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.light-workout-summary { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0; color: var(--muted); font-size: 10px; }
+.light-workout-summary > span { color: var(--ink); font-size: 18px; line-height: 1; }
+.light-workout-content { padding: 0 14px 14px; border-top: 1px solid var(--line); }
+.light-workout-exercises { display: grid; gap: 0; list-style: none; margin: 0; padding: 0; }
+.light-workout-exercises li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.light-workout-exercises li > span:first-child { color: var(--muted); font-size: 9px; line-height: 2.3; font-variant-numeric: tabular-nums; }
+.light-workout-note { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.light-workout-reroll { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; margin-top: 12px; }
+.light-workout-reroll .light-workout-note { margin: 0; }
+.light-workout-preference { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; margin-top: 12px; color: var(--ink); font-size: 11px; line-height: 1.6; cursor: pointer; }
+.light-workout-preference input { position: absolute; right: 0; width: 34px; height: 20px; margin: 0; opacity: 0; }
+.light-workout-switch { position: relative; display: block; flex: 0 0 34px; width: 34px; height: 18px; border: 1px solid var(--control); background: transparent; pointer-events: none; }
+.light-workout-switch::after { position: absolute; top: 3px; left: 3px; width: 10px; height: 10px; background: var(--muted); content: ''; }
+.light-workout-preference input:checked + .light-workout-switch { border-color: var(--ink); }
+.light-workout-preference input:checked + .light-workout-switch::after { left: 19px; background: var(--ink); }
+.light-workout-preference input:focus-visible + .light-workout-switch, .light-workout-heading:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.light-workout-preference input:disabled + .light-workout-switch { opacity: .45; }
+.light-workout-error { margin-top: 12px; border-left: 2px solid var(--ink); padding-left: 12px; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.light-workout-error p { margin: 0 0 7px; }
+@media(max-width: 360px) {
+  .light-workout-heading { padding: 12px 10px; gap: 8px; }
+  .light-workout-summary { gap: 8px; font-size: 9px; }
+  .light-workout-content { padding: 0 10px 12px; }
+}

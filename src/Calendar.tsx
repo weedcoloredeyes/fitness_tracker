@@ -3,15 +3,25 @@ import { telegram } from './telegram';
 import { trackingTimezone } from './tracking-api';
 import { waitForActivitySaves, type Activity } from './Today';
 import { ACTIVITY_CATEGORIES, ACTIVITY_LABELS, type ActivityCategory } from '../server/tracking-types';
+import { cardioPatternForDate } from './calendar-cardio-patterns';
 
 const weekdays = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
 const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
-function CardioContour({ fraction = 1 }: { fraction?: number }) {
-  return <svg className="calendar-cardio-contour" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-    <path d="M16 3.5C23.5 2.5 29 8.3 28.5 15.7C29.3 23 23.5 29.1 16.1 28.4C8.3 29.2 3 23 3.6 16C2.8 8.5 8.6 3 16 3.5Z"
-      pathLength="100" strokeDasharray={fraction < 1 ? `${Math.max(0, fraction) * 100} 100` : undefined} />
-  </svg>;
+function ActivityMarks({ date, strength = 0, light = 0, cardio = 0 }: { date: string; strength?: number; light?: number; cardio?: number }) {
+  const partialCardio = cardio < 1;
+  const path = cardioPatternForDate(date);
+  return <>
+    {strength > 0 && <span className="calendar-main-fill" style={{ height: `${strength * 100}%` }} aria-hidden="true" />}
+    {strength === 0 && light > 0 && <span className="calendar-light-tone"
+      style={{ opacity: .34 * light }} aria-hidden="true" />}
+    {cardio > 0 && <svg className="calendar-cardio-circle" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+      <path className="calendar-cardio-halo" d={path} />
+      {partialCardio && <path className="calendar-cardio-track" d={path} />}
+      <path className="calendar-cardio-ink" d={path} pathLength="100"
+        strokeDasharray={partialCardio ? `${cardio * 100} 100` : undefined} />
+    </svg>}
+  </>;
 }
 
 function dateKey(date: Date) {
@@ -97,11 +107,12 @@ export function Calendar({ onSelectDate, authenticated, active, activities, acti
                 const activity = activities[dateKey(date)];
                 const labels = activity?.definitions.filter(item => activity.completedIds.includes(item.id)).map(item => item.name) ?? [];
                 const isToday = dateKey(date) === dateKey(today);
+                const isFuture = dateKey(date) > dateKey(today);
                 const showMonth = date.getDate() === 1 || (index === 0 && day === 0);
                 const strength = Math.max(0, Math.min(1, activity?.strengthFraction ?? 0));
                 const light = Math.max(0, Math.min(1, activity?.lightFraction ?? 0));
                 const cardio = Math.max(0, Math.min(1, activity?.cardioFraction ?? 0));
-                const partialStrength = strength > 0 && strength < 1;
+                const hasMarks = strength > 0 || light > 0 || cardio > 0;
                 const categoryLabel = (category: ActivityCategory) => {
                   const definitions = activity?.definitions.filter(item => item.category === category) ?? [];
                   const completed = definitions.filter(item => activity?.completedIds.includes(item.id)).length;
@@ -109,12 +120,10 @@ export function Calendar({ onSelectDate, authenticated, active, activities, acti
                 };
                 return (
                   <td key={dateKey(date)}>
-                    <button type="button" onClick={() => onSelectDate(dateKey(date))} className={`calendar-day${isToday ? ' calendar-day-today' : ''}${strength === 1 ? ' calendar-day-strength-full' : ''}${partialStrength ? ' calendar-day-strength-partial' : ''}`}
+                    <button type="button" onClick={() => onSelectDate(dateKey(date))} className={`calendar-day${isToday ? ' calendar-day-today' : ''}${isFuture ? ' calendar-day-future' : ''}${hasMarks ? ' calendar-day-has-marks' : ''}${strength >= .5 ? ' calendar-day-dark' : ''}${strength === 1 ? ' calendar-day-main-full' : ''}${strength === 0 && light > 0 ? ' calendar-day-light-only' : ''}`}
                       aria-current={isToday ? 'date' : undefined}
                       aria-label={`${date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}${isToday ? ', сегодня' : ''}${labels.length ? ', выполнено: ' + labels.join(', ') : ''}${ACTIVITY_CATEGORIES.map(categoryLabel).join('')}`}>
-                      {partialStrength && <span className="calendar-strength-shading" style={{ height: `${strength * 100}%` }} aria-hidden="true" />}
-                      {cardio > 0 && <CardioContour fraction={cardio} />}
-                      {light > 0 && <span className="calendar-light-mark" style={{ width: `${light * 60}%` }} aria-hidden="true" />}
+                      <ActivityMarks date={dateKey(date)} strength={strength} light={light} cardio={cardio} />
                       {showMonth && <span className="day-month" aria-hidden="true">{months[date.getMonth()]}</span>}
                       <span className="day-number" aria-hidden="true">{date.getDate()}</span>
                     </button>
@@ -126,12 +135,12 @@ export function Calendar({ onSelectDate, authenticated, active, activities, acti
         </tbody>
       </table>
       <div className="calendar-legend" aria-label="обозначения отметок">
-        <span><span className="calendar-key calendar-key-strength" aria-hidden="true" />основная тренировка</span>
-        <span><span className="calendar-key calendar-key-light" aria-hidden="true"><span className="calendar-light-mark" /></span>легкая тренировка</span>
-        <span><span className="calendar-key calendar-key-cardio" aria-hidden="true"><CardioContour /></span>кардио</span>
-        <span><span className="calendar-key calendar-key-today" aria-hidden="true" />сегодня</span>
+        <span><span className="calendar-key calendar-day-dark calendar-day-main-full" aria-hidden="true"><ActivityMarks date="legend-main" strength={1} /><span className="day-number">12</span></span>основная тренировка</span>
+        <span><span className="calendar-key calendar-day-light-only" aria-hidden="true"><ActivityMarks date="legend-light" light={1} /><span className="day-number">12</span></span>легкая тренировка</span>
+        <span><span className="calendar-key" aria-hidden="true"><ActivityMarks date="legend-cardio" cardio={1} /><span className="day-number">12</span></span>кардио</span>
+        <span><span className="calendar-key calendar-key-today" aria-hidden="true"><span className="day-number">12</span></span>сегодня</span>
       </div>
-      <p className="calendar-marks-note">штриховка, короткая черта и незамкнутый контур — часть отметок категории</p>
+      <p className="calendar-marks-note">неполное выполнение — частичная заливка, более светлый фон или незамкнутый круг</p>
       {error && <div className="activity-error" role="alert"><p>{error}</p>
         <button className="retry-button" onClick={() => setRetry((value) => value + 1)}>повторить</button>
       </div>}

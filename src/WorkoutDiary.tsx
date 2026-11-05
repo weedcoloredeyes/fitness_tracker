@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { telegram } from './telegram';
 
-type Exercise = { id: string; name: string; reps: number | null; sets: number | null; weight: number | null };
+type Exercise = { id: string; name: string; reps: number | null; sets: number | null; weight: number | null; source?: 'light'; sourceText?: string };
 type Workout = { date: string; exercises: Exercise[] };
 type DraftExercise = { id: string; name: string; reps: string; sets: string; weight: string };
 type Day = {
   workout: Workout | null; loaded: boolean; loading: boolean; loadError: string; saveError: string;
   editing: boolean; draft: DraftExercise[]; saving: boolean; copying: boolean;
 };
-type Props = { date: string; authenticated: boolean; active: boolean; onSaved?: () => void };
+type Props = { date: string; authenticated: boolean; active: boolean; onSaved?: () => void; revision?: number };
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const freshDay = (): Day => ({ workout: null, loaded: false, loading: false, loadError: '', saveError: '', editing: false, draft: [], saving: false, copying: false });
 const lower = (text: string) => text.replace(/\u0451/gi, 'е').toLocaleLowerCase('ru-RU');
 const message = (error: unknown, fallback: string) => lower(error instanceof Error ? error.message : fallback);
 const format = (value: number | null) => value === null ? '—' : value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
-const drafts = (workout: Workout): DraftExercise[] => workout.exercises.map((row) => ({
+const drafts = (workout: Workout): DraftExercise[] => workout.exercises.filter(row => row.source !== 'light').map((row) => ({
   id: row.id, name: row.name, reps: row.reps === null ? '' : String(row.reps), sets: row.sets === null ? '' : String(row.sets), weight: row.weight === null ? '' : String(row.weight),
 }));
 let fallbackId = 0;
@@ -39,7 +39,9 @@ function readWorkout(value: unknown, date?: string): Workout {
     for (const key of ['reps', 'sets', 'weight']) {
       if (!(exercise[key] === null || typeof exercise[key] === 'number' && Number.isFinite(exercise[key]))) throw new Error('не удалось прочитать упражнение');
     }
-    return { id: exercise.id, name: lower(exercise.name), reps: exercise.reps as number | null, sets: exercise.sets as number | null, weight: exercise.weight as number | null };
+    if ((exercise.source !== undefined || exercise.sourceText !== undefined) && (exercise.source !== 'light' || typeof exercise.sourceText !== 'string' || !exercise.sourceText.trim() || exercise.sourceText.length > 2000)) throw new Error('не удалось прочитать выполненный набор');
+    return { id: exercise.id, name: lower(exercise.name), reps: exercise.reps as number | null, sets: exercise.sets as number | null, weight: exercise.weight as number | null,
+      ...(exercise.source === 'light' ? { source: 'light' as const, sourceText: lower(exercise.sourceText as string) } : {}) };
   });
   return { date: row.date, exercises };
 }
@@ -61,7 +63,7 @@ function parseNumber(raw: string, min: number, max: number, decimal = false): nu
   return value;
 }
 
-export function WorkoutDiary({ date, authenticated, active, onSaved }: Props) {
+export function WorkoutDiary({ date, authenticated, active, onSaved, revision = 0 }: Props) {
   const [days, setDays] = useState<Record<string, Day>>({});
   const [refresh, setRefresh] = useState(0);
   const versions = useRef(new Map<string, number>());
@@ -97,7 +99,7 @@ export function WorkoutDiary({ date, authenticated, active, onSaved }: Props) {
       if (requests.current.get(date) === controller) requests.current.delete(date);
     });
     return () => { window.clearTimeout(timeout); controller.abort(); };
-  }, [authenticated, active, date, refresh, day.saving]);
+  }, [authenticated, active, date, refresh, day.saving, revision]);
 
   const changeRow = (id: string, key: keyof Omit<DraftExercise, 'id'>, value: string) => update(date, (current) => ({
     ...current, saveError: '', draft: current.draft.map((row) => row.id === id ? { ...row, [key]: key === 'name' ? lower(value) : value } : row),
@@ -147,25 +149,34 @@ export function WorkoutDiary({ date, authenticated, active, onSaved }: Props) {
       if (result.workout === null) throw new Error('до этого дня еще нет сохраненных упражнений');
       const workout = readWorkout(result.workout);
       if (workout.date >= date) throw new Error('не удалось найти прошлую тренировку');
-      update(date, (current) => ({ ...current, editing: true, draft: drafts(workout).map((row) => ({ ...row, id: rowId() })), saveError: '' }));
+      const copied = workout.exercises.map(row => {
+        const name = row.source === 'light' ? row.sourceText! : row.name;
+        if (name.length > 120) throw new Error('для копирования сократи название упражнения до 120 символов');
+        return { id: rowId(), name, reps: row.reps === null ? '' : String(row.reps), sets: row.sets === null ? '' : String(row.sets), weight: row.weight === null ? '' : String(row.weight) };
+      });
+      update(date, (current) => ({ ...current, editing: true, draft: copied, saveError: '' }));
     } catch (error) {
       update(date, (current) => ({ ...current, saveError: controller.signal.aborted ? 'поиск не завершен. попробуй еще раз' : message(error, 'не удалось скопировать тренировку') }));
     } finally { window.clearTimeout(timeout); update(date, (current) => ({ ...current, copying: false })); }
   }
 
   const rows = day.workout?.exercises ?? [];
+  const automatic = rows.filter(row => row.source === 'light');
+  const manual = rows.filter(row => row.source !== 'light');
+  const visibleRows = day.editing ? automatic : rows;
   return <section className="workout-diary" aria-labelledby="workout-diary-title">
     <div className="workout-diary-heading"><h2 id="workout-diary-title">упражнения за день</h2>
       {authenticated && day.loaded && !future && !day.editing && <button className="edit-profile" type="button" disabled={day.saving || day.copying}
-        onClick={() => update(date, (current) => ({ ...current, editing: true, saveError: '', draft: rows.length ? drafts(current.workout!) : [blankRow()] }))}>{rows.length ? 'изменить' : 'добавить'}</button>}
+        onClick={() => update(date, (current) => ({ ...current, editing: true, saveError: '', draft: manual.length ? drafts(current.workout!) : [blankRow()] }))}>{manual.length ? 'изменить' : 'добавить'}</button>}
     </div>
     {!authenticated ? <p className="workout-hint">открой приложение через telegram, чтобы записывать упражнения</p>
       : !day.loaded ? day.loadError ? null : <p className="workout-hint" role="status">загружаем упражнения…</p>
-        : !day.editing && (rows.length ? <ol className="workout-records">{rows.map((row, index) => <li key={row.id}>
+        : (visibleRows.length ? <ol className="workout-records">{visibleRows.map((row, index) => <li key={row.id}>
           <div className="workout-record-name"><span>{String(index + 1).padStart(2, '0')}</span><strong>{row.name}</strong></div>
-          <dl><div><dt>повторы</dt><dd>{format(row.reps)}</dd></div><div><dt>подходы</dt><dd>{format(row.sets)}</dd></div>
-            {row.weight !== null && <div><dt>вес, кг</dt><dd>{format(row.weight)}</dd></div>}</dl>
-        </li>)}</ol> : <p className="workout-hint">{future ? 'упражнения можно записать, когда этот день наступит' : 'упражнения за этот день пока не записаны'}</p>)}
+          {row.source === 'light' && <><p className="workout-completed-source">выполнено · легкая тренировка</p>{row.sourceText !== row.name && <p className="workout-source-instructions">{row.sourceText}</p>}</>}
+          {(row.source !== 'light' || row.reps !== null || row.sets !== null || row.weight !== null) && <dl>{(row.source !== 'light' || row.reps !== null) && <div><dt>повторы</dt><dd>{format(row.reps)}</dd></div>}{(row.source !== 'light' || row.sets !== null) && <div><dt>подходы</dt><dd>{format(row.sets)}</dd></div>}
+            {row.weight !== null && <div><dt>вес, кг</dt><dd>{format(row.weight)}</dd></div>}</dl>}
+        </li>)}</ol> : !day.editing && <p className="workout-hint">{future ? 'упражнения можно записать, когда этот день наступит' : 'упражнения за этот день пока не записаны'}</p>)}
     {authenticated && day.loaded && !future && !day.editing && rows.length === 0 && <button className="workout-copy" type="button" disabled={day.copying || day.saving} onClick={() => void copyLatest()}>{day.copying ? 'ищем прошлую…' : 'скопировать прошлую тренировку'}</button>}
     {day.editing && !future && <form className="workout-editor" onSubmit={(event) => void save(event)}><fieldset disabled={day.saving || day.copying}>
       <ol className="workout-draft-rows">{day.draft.map((row, index) => <li key={row.id}>
@@ -176,8 +187,8 @@ export function WorkoutDiary({ date, authenticated, active, onSaved }: Props) {
           <label>подходы<input type="number" inputMode="numeric" min="1" max="100" step="1" value={row.sets} placeholder="—" aria-label={`подходы упражнения ${index + 1}`} onChange={(event) => changeRow(row.id, 'sets', event.target.value)} /></label>
           <label>вес, кг <span className="workout-optional">необязательно</span><input type="number" inputMode="decimal" min="0" max="1000" step="0.1" value={row.weight} placeholder="—" aria-label={`вес упражнения ${index + 1}`} onChange={(event) => changeRow(row.id, 'weight', event.target.value)} /></label></div>
       </li>)}</ol>
-      <button className="workout-add" type="button" disabled={day.draft.length >= 50} onClick={() => update(date, (current) => ({ ...current, draft: [...current.draft, blankRow()] }))}>+ упражнение</button>
-      {day.draft.length === 0 && rows.length > 0 && <p className="workout-hint">после сохранения упражнения за этот день будут убраны</p>}
+      <button className="workout-add" type="button" disabled={day.draft.length + automatic.length >= 50} onClick={() => update(date, (current) => ({ ...current, draft: [...current.draft, blankRow()] }))}>+ упражнение</button>
+      {day.draft.length === 0 && manual.length > 0 && <p className="workout-hint">после сохранения ручные упражнения за этот день будут убраны</p>}
       <div className="workout-actions"><button type="submit" className="save-profile">{day.saving ? 'сохраняем…' : 'сохранить упражнения'}</button><button className="retry-button" type="button" onClick={() => update(date, (current) => ({ ...current, editing: false, saveError: '', draft: current.workout ? drafts(current.workout) : [] }))}>отменить</button></div>
       <p className="workout-hint">запись упражнений сохраняет дневник. выполнение тренировки отмечается отдельно выше</p>
     </fieldset></form>}

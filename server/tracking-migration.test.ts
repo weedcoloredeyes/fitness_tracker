@@ -87,7 +87,7 @@ test('schema 8 migration preserves dated custom history and activates light once
     try {
       assert.deepEqual(snapshot(raw), before, 'the schema rebuild must retain all original rows and values');
       assert.deepEqual(raw.prepare('PRAGMA foreign_key_check').all(), []);
-      assert.equal(raw.prepare('PRAGMA user_version').get()!.user_version, 9);
+      assert.equal(raw.prepare('PRAGMA user_version').get()!.user_version, 11);
     } finally { raw.close(); }
     const previous = users.tracking.getCalendar(101, '2026-01-01', '2026-01-03').map(history);
     assert.deepEqual(previous[1].weights, LEGACY_CATEGORY_WEIGHTS);

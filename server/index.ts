@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createApp } from './app';
 import { Users } from './users';
@@ -12,9 +12,9 @@ const localUserId = Number(process.env.LOCAL_USER_ID);
 if (localMode && (!Number.isSafeInteger(localUserId) || localUserId <= 0)) {
   throw new Error('Для LOCAL_MODE=1 укажи LOCAL_USER_ID существующего пользователя.');
 }
-const databaseFile = resolve('data/fitness.sqlite');
-if (localMode && !existsSync(databaseFile)) throw new Error('Для локального режима нужна существующая база data/fitness.sqlite.');
-const users = new Users(databaseFile, resolve('data/users.json'));
+const databaseFile = resolve(process.env.DATABASE_PATH?.trim() || 'data/fitness.sqlite');
+if (localMode && !existsSync(databaseFile)) throw new Error('Для локального режима нужна существующая база по пути DATABASE_PATH (по умолчанию data/fitness.sqlite).');
+const users = new Users(databaseFile, resolve(dirname(databaseFile), 'users.json'));
 let server;
 try {
   server = createApp(token ?? '', users, resolve('dist'), {

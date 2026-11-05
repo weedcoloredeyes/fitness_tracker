@@ -191,51 +191,84 @@ button:focus-visible, .activity-option:has(input:focus-visible),
 .activity-skeleton { display: grid; }
 .activity-skeleton > div { height: 80px; border-bottom: 1px solid var(--line); background: var(--label); }
 
-/* Calendar archive: strength fills the tile; cardio circles the date. */
+/* Black main training, gray light training and hand-drawn cardio circles. */
 .calendar { padding: 0; }
 .calendar-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 26px; }
 .calendar-period { color: var(--muted); font: 9px/1.6 var(--mono); white-space: nowrap; }
-.calendar-grid { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 2px 3px; }
+.calendar-grid { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 6px; }
 .calendar-grid th { font-weight: 400; }
 .calendar-grid thead th { height: 26px; padding: 0 0 6px; color: var(--muted); font: 9px/1.4 var(--mono); }
-.calendar-grid .week-heading { width: 14px; }
-.calendar-grid .week-number { padding: 0 3px 0 0; color: var(--muted); font: 8px/1.4 var(--mono); text-align: left; }
+.calendar-grid .week-heading { width: 10px; }
+.calendar-grid .week-number { padding: 0; color: var(--muted); font: 8px/1.4 var(--mono); text-align: left; }
 .calendar-grid td { padding: 0; }
-button.calendar-day {
+.calendar-day, .calendar-key {
+  --day-surface: var(--paper);
+  --day-foreground: var(--ink);
+  --cardio-circle-size: 32px;
   position: relative;
+  isolation: isolate;
+  color: var(--day-foreground);
+}
+button.calendar-day {
   display: block;
   width: 100%;
-  height: 48px;
-  min-height: 48px;
+  height: auto;
+  min-height: 0;
+  aspect-ratio: 1;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 0;
-  color: var(--ink);
-  background: transparent;
+  background: var(--paper);
   font: inherit;
+  touch-action: manipulation;
+  transition: transform 140ms ease;
 }
-button.calendar-day-strength-full { color: var(--paper); background: var(--ink); border-color: var(--ink); }
-button.calendar-day-today::after { position: absolute; z-index: 3; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; content: ''; pointer-events: none; }
-button.calendar-day:hover { border-color: var(--ink); }
-button.calendar-day:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
-.day-number { position: absolute; z-index: 2; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 12px; line-height: 1; font-variant-numeric: tabular-nums; }
-.day-month { position: absolute; z-index: 2; top: 1px; left: 3px; color: var(--muted); font: 8.5px/1 var(--mono); }
-.calendar-day-strength-full .day-month { color: var(--paper); }
-.calendar-strength-shading { position: absolute; right: 0; bottom: 0; left: 0; background: repeating-linear-gradient(130deg, currentColor 0 1px, transparent 1px 4px); opacity: .45; pointer-events: none; }
-.calendar-day-strength-partial .day-number { background: var(--paper); box-shadow: 0 0 0 2px var(--paper); }
-.calendar-day-strength-partial .day-month { background: var(--paper); box-shadow: 0 0 0 1px var(--paper); }
-.calendar-cardio-contour { position: absolute; z-index: 1; top: 50%; left: 50%; width: 32px; height: 32px; transform: translate(-50%, -50%) rotate(-5deg); color: inherit; pointer-events: none; }
-.calendar-cardio-contour path { fill: none; stroke: currentColor; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.calendar-light-mark { position: absolute; z-index: 3; left: 20%; bottom: 5px; width: 60%; height: 0; border-top: 2px solid currentColor; transform: rotate(-5deg); pointer-events: none; }
-.calendar-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px 16px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font: 9px/1.5 var(--mono); }
-.calendar-legend > span { display: inline-flex; align-items: center; gap: 8px; }
-.calendar-key { position: relative; display: inline-block; flex: 0 0 20px; width: 20px; height: 24px; border: 1px solid var(--line); color: var(--ink); }
-.calendar-key-strength { border-color: var(--ink); background: var(--ink); }
-.calendar-key-cardio .calendar-cardio-contour { width: 21px; height: 21px; }
-.calendar-key-cardio .calendar-cardio-contour path { stroke-width: 1.2; }
-.calendar-key-light .calendar-light-mark { bottom: 5px; border-top-width: 1.5px; }
-.calendar-key-today::after { position: absolute; top: 3px; right: 3px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; content: ''; }
-.calendar-marks-note { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; text-align: center; }
+.calendar-day-dark { --day-surface: var(--ink); --day-foreground: var(--paper); }
+button.calendar-day-main-full { border-color: var(--ink); }
+button.calendar-day-today, .calendar-key-today {
+  border-color: var(--ink);
+  outline: 3px solid var(--ink);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 1px var(--paper);
+}
+button.calendar-day:active { transform: translateY(1px) scale(.98); }
+button.calendar-day:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+button.calendar-day-today:focus-visible { outline-width: 3px; outline-offset: 1px; box-shadow: 0 0 0 1px var(--paper), 0 0 0 6px var(--line); }
+.calendar-main-fill { position: absolute; z-index: 1; right: 0; bottom: 0; left: 0; background: var(--ink); pointer-events: none; }
+.calendar-light-tone { position: absolute; z-index: 1; inset: 0; background: var(--ink); pointer-events: none; }
+.day-number { position: absolute; z-index: 4; top: 50%; left: 50%; min-width: 16px; padding: 1px 0; transform: translate(-50%, -50%); background: var(--day-surface); color: var(--day-foreground); font-size: 12px; line-height: 1; text-align: center; font-variant-numeric: tabular-nums; }
+.calendar-day-future:not(.calendar-day-has-marks) .day-number { color: var(--muted); }
+.calendar-day-light-only .day-number { background: transparent; }
+.day-month { position: absolute; z-index: 4; top: 2px; left: 2px; color: var(--day-foreground); font: 7px/1 var(--mono); }
+.calendar-cardio-circle { position: absolute; z-index: 3; top: 50%; left: 50%; width: var(--cardio-circle-size); height: var(--cardio-circle-size); transform: translate(-50%, -50%); overflow: visible; fill: none; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.calendar-cardio-circle path { vector-effect: non-scaling-stroke; }
+.calendar-cardio-halo { stroke: var(--day-surface); stroke-width: 4; }
+.calendar-day-light-only .calendar-cardio-halo { display: none; }
+.calendar-cardio-track { stroke: var(--day-foreground); stroke-width: 1; opacity: .3; }
+.calendar-cardio-ink { stroke: var(--day-foreground); stroke-width: 1.65; }
+.calendar-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 18px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font: 10px/1.5 var(--mono); }
+.calendar-legend > span { display: flex; min-width: 0; align-items: center; gap: 12px; }
+.calendar-key { --cardio-circle-size: 28px; display: block; flex: 0 0 28px; width: 28px; height: 28px; border: 1px solid var(--line); background: var(--paper); }
+.calendar-key.calendar-day-main-full { border-color: var(--ink); }
+.calendar-key .day-number { min-width: 14px; font-size: 10px; }
+.calendar-marks-note { margin: 16px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+@media (hover: hover) {
+  button.calendar-day:hover { transform: translateY(-1px); }
+  button.calendar-day:active { transform: translateY(1px) scale(.98); }
+}
+@media (max-width: 360px) {
+  .calendar-day { --cardio-circle-size: 26px; }
+  .calendar-legend { gap: 16px 10px; }
+}
+@media (max-width: 300px) {
+  .calendar-day { --cardio-circle-size: 23px; }
+  .day-number { min-width: 14px; font-size: 11px; }
+  .day-month { font-size: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  button.calendar-day { transition: none; }
+  button.calendar-day:hover, button.calendar-day:active { transform: none; }
+}
 
 /* Seven-day index. */
 .index-score-card { padding: 24px 0 28px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }

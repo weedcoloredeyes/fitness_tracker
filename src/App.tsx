@@ -119,7 +119,7 @@ export function App() {
         activities={activities} activityRevision={activityRevision} onLoaded={loadActivities}
         onSelectDate={(date) => { setSelectedDate(date); setTab('today'); }} /></div>
       <div hidden={tab !== 'today'}><Today authenticated={authenticated} active={tab === 'today'} selectedDate={selectedDate} onActivityChange={updateActivity} measurementRevision={measurementRevision} onMeasurementChange={measurementChanged}
-        onConfigurationChange={configurationChanged} onSelectToday={() => setSelectedDate(null)} /></div>
+        onConfigurationChange={configurationChanged} onSelectDate={setSelectedDate} /></div>
       <div hidden={tab !== 'formIndex'}><FormIndex authenticated={authenticated} active={tab === 'formIndex'} activityRevision={activityRevision} activities={activities} onLoaded={loadActivities} measurementRevision={measurementRevision}
         planRevision={planRevision} onPlanChange={planChanged} /></div>
       <nav className="bottom-nav" aria-label="Разделы приложения">
@@ -131,7 +131,7 @@ export function App() {
           <span className="nav-number" aria-hidden="true">02</span>
           <span>календарь</span>
         </button>
-        <button type="button" aria-current={tab === 'today' ? 'page' : undefined} onClick={() => setTab('today')}>
+        <button type="button" aria-current={tab === 'today' ? 'page' : undefined} onClick={() => { setSelectedDate(null); setTab('today'); }}>
           <span className="nav-number" aria-hidden="true">03</span>
           <span>отметки</span>
         </button>

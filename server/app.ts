@@ -7,6 +7,7 @@ import { Users } from './users';
 import { todayInTimezone, validateActivityDate } from './activity';
 import { validateProfile } from './profile';
 import { validateMeasurement } from './measurements';
+import { LightWorkoutError } from './light-workouts';
 
 function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -107,6 +108,36 @@ export function createApp(token: string, users: Users, root = resolve('dist'), o
           json(res, 200, { user: users.identify(user) });
           return;
         }
+        if (path === '/api/light-workouts' || path === '/api/light-workouts/preferences' || path === '/api/light-workouts/reroll') {
+          let user;
+          try { user = requestUser(req); }
+          catch { json(res, 401, { error: 'открой приложение заново через telegram.' }); return; }
+          try {
+            const today = todayInTimezone(requestUrl.searchParams.get('timezone'));
+            const date = validateActivityDate(requestUrl.searchParams.get('date') ?? today);
+            identifyUser(user);
+            if (path === '/api/light-workouts' && req.method === 'GET') {
+              json(res, 200, users.lightWorkouts.getDay(user.id, date, today)); return;
+            }
+            if (path === '/api/light-workouts' && req.method === 'POST') {
+              json(res, 200, users.lightWorkouts.selectToday(user.id, date, today)); return;
+            }
+            if (path === '/api/light-workouts/reroll' && req.method === 'POST') {
+              const input = await body(req);
+              if (typeof input.expectedCatalogId !== 'string') throw new Error('Invalid current set');
+              json(res, 200, users.rerollLightWorkout(user.id, date, today, input.expectedCatalogId)); return;
+            }
+            if (path === '/api/light-workouts/preferences' && req.method === 'PATCH') {
+              const input = await body(req);
+              json(res, 200, users.lightWorkouts.setDailyEnabled(user.id, input.dailyEnabled, today)); return;
+            }
+            json(res, 405, { error: 'метод не поддерживается' }); return;
+          } catch (error) {
+            if (error instanceof LightWorkoutError) { json(res, error.status, { error: error.message }); return; }
+            json(res, 400, { error: 'не удалось получить набор. проверь дату и настройки; подобрать тренировку можно только на сегодня.' });
+            return;
+          }
+        }
         if (path.startsWith('/api/tracking/') || path === '/api/workouts' || path === '/api/workouts/latest') {
           let user;
           try { user = requestUser(req); }
@@ -133,7 +164,7 @@ export function createApp(token: string, users: Users, root = resolve('dist'), o
                 if (date > today) throw new Error('Future date');
                 const input = await body(req);
                 if (typeof input.id !== 'string' || typeof input.completed !== 'boolean') throw new Error('Invalid completion');
-                json(res, 200, { day: store.setCompletion(user.id, date, input.id, input.completed) });
+                json(res, 200, { day: users.setTrackingCompletion(user.id, date, input.id, input.completed) });
               } else json(res, 200, { day: store.getDay(user.id, date) });
               return;
             }

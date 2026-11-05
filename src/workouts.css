@@ -8,6 +8,8 @@
 .workout-record-name { display: flex; gap: 12px; align-items: baseline; min-width: 0; }
 .workout-record-name > span { color: var(--muted); font: 9px/1.5 var(--mono); }
 .workout-record-name strong { min-width: 0; font-size: 17px; font-weight: 400; line-height: 1.4; overflow-wrap: anywhere; }
+.workout-completed-source, .workout-source-instructions { margin: 8px 0 0 26px; color: var(--muted); font: 11px/1.6 var(--sans); overflow-wrap: anywhere; }
+.workout-source-instructions { color: var(--ink); }
 .workout-records dl { display: flex; flex-wrap: wrap; gap: 16px 26px; margin: 16px 0 0 26px; }
 .workout-records dl > div { min-width: 50px; }
 .workout-records dt { margin-bottom: 7px; color: var(--muted); font: 9px/1.5 var(--mono); }

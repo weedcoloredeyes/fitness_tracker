@@ -7,6 +7,7 @@ import { weightProgress, type Profile, type ProfileInput } from './profile';
 import { validateActivityDate } from './activity';
 import { validateMeasurement, type Measurement, type MeasurementInput } from './measurements';
 import { Tracking } from './tracking';
+import { LightWorkouts, LightWorkoutError } from './light-workouts';
 
 export type AppUser = TelegramUser & {
   role: 'admin' | 'user';
@@ -38,6 +39,7 @@ function mapUser(row: Record<string, unknown>): AppUser {
 export class Users {
   private db: DatabaseSync;
   readonly tracking: Tracking;
+  readonly lightWorkouts: LightWorkouts;
 
   constructor(file: string, legacyFile?: string) {
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
@@ -111,7 +113,8 @@ export class Users {
         this.db.exec('UPDATE app_settings SET legacy_imported = 1 WHERE id = 1');
       }
       this.tracking = new Tracking(this.db);
-      this.db.exec('PRAGMA user_version = 9');
+      this.lightWorkouts = new LightWorkouts(this.db);
+      this.db.exec('PRAGMA user_version = 11');
       this.db.exec('COMMIT');
     } catch (error) {
       try { this.db.exec('ROLLBACK'); } catch { /* транзакция могла не начаться */ }
@@ -175,6 +178,42 @@ export class Users {
 
   list(): AppUser[] {
     return this.db.prepare(selectUsers + ' ORDER BY u.first_seen, u.id').all().map(mapUser);
+  }
+
+  private activityAndDiaryChange<T>(action: () => T): T {
+    this.db.exec('SAVEPOINT activity_and_diary');
+    try {
+      const result = action();
+      this.db.exec('RELEASE activity_and_diary');
+      return result;
+    } catch (error) {
+      this.db.exec('ROLLBACK TO activity_and_diary; RELEASE activity_and_diary');
+      throw error;
+    }
+  }
+
+  setTrackingCompletion(userId: number, date: string, id: string, completed: boolean) {
+    return this.activityAndDiaryChange(() => {
+      const before = this.tracking.getDay(userId, date);
+      const isLight = before.definitions.some(item => item.id === id && item.category === 'light');
+      const day = this.tracking.setCompletion(userId, date, id, completed);
+      if (isLight) {
+        const lightCompleted = day.definitions.some(item => item.category === 'light' && day.completedIds.includes(item.id));
+        const assignment = lightCompleted ? this.lightWorkouts.getSavedAssignment(userId, date) : null;
+        this.tracking.workouts.syncLightWorkout(userId, date, assignment);
+      }
+      return day;
+    });
+  }
+
+  rerollLightWorkout(userId: number, date: string, today: string, expectedCatalogId: string) {
+    return this.activityAndDiaryChange(() => {
+      const day = this.tracking.getDay(userId, date);
+      if (day.definitions.some(item => item.category === 'light' && day.completedIds.includes(item.id))) {
+        throw new LightWorkoutError('сними отметку легкой тренировки, чтобы сменить набор', 409);
+      }
+      return this.lightWorkouts.rerollToday(userId, date, today, expectedCatalogId);
+    });
   }
 
   getActivity(userId: number, date: string): Activity {

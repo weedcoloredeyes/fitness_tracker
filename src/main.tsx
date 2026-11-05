@@ -5,6 +5,7 @@ import { telegram } from './telegram';
 import './styles.css';
 import './measurements.css';
 import './tracking.css';
+import './light-workout.css';
 import './workouts.css';
 import './monthly-tracking.css';
 import './typography.css';
